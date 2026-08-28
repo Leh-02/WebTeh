@@ -1,0 +1,131 @@
+{% extends 'base.html' %}
+{% block title %}{{ order.number }} — TopBearing Admin{% endblock %}
+{% block content %}
+<section class="container page-shell admin-shell">
+  <div class="page-heading">
+    <div>
+      <span class="eyebrow">Замовлення</span>
+      <h1>{{ order.number }}</h1>
+    </div>
+    <a class="secondary-button" href="/admin/orders">← До списку</a>
+  </div>
+
+  <nav class="admin-nav">
+    <a href="/admin">Огляд</a>
+    <a href="/admin/products">Товари</a>
+    <a class="active" href="/admin/orders">Замовлення</a>
+    <a href="/admin/settings">Налаштування</a>
+  </nav>
+
+  <div class="admin-order-grid">
+    <div class="admin-form-main">
+      <section class="panel">
+        <h2>Товари</h2>
+        <div class="order-items-summary">
+          {% for item in order.items %}
+          <div>
+            <span>{{ item.name_snapshot }} × {{ item.qty }}<small>{{ item.sku_snapshot }}</small></span>
+            <strong>{{ item.line_total|money }} грн</strong>
+          </div>
+          {% endfor %}
+          <div class="summary-total">
+            <span>Разом</span>
+            <strong>{{ order.total|money }} грн</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Отримувач</h2>
+        <dl class="detail-list">
+          <div><dt>Ім’я</dt><dd>{{ order.customer_name or '—' }}</dd></div>
+          <div><dt>Телефон</dt><dd>{{ order.customer_phone or '—' }}</dd></div>
+          <div><dt>Email</dt><dd>{{ order.customer_email or '—' }}</dd></div>
+        </dl>
+      </section>
+
+      <section class="panel">
+        <h2>Доставка</h2>
+        <dl class="detail-list">
+          <div><dt>Служба</dt><dd>{{ delivery_labels.get(order.delivery_service, order.delivery_service or '—') }}</dd></div>
+          <div><dt>Місто</dt><dd>{{ order.delivery_city or '—' }}</dd></div>
+          <div><dt>Відділення</dt><dd>{{ order.delivery_branch or order.delivery_address or '—' }}</dd></div>
+          {% if order.delivery_postal_code %}<div><dt>Індекс</dt><dd>{{ order.delivery_postal_code }}</dd></div>{% endif %}
+        </dl>
+        {% if order.comment %}
+        <div class="shipping-note"><strong>Коментар:</strong> {{ order.comment }}</div>
+        {% endif %}
+      </section>
+    </div>
+
+    <aside>
+      <form method="post" action="/admin/orders/{{ order.id }}/update" class="panel sticky-save form-stack">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <h2>Статус</h2>
+
+        <label>Замовлення
+          <select name="status">
+            {% for key,label in order_status_labels.items() %}
+            <option value="{{ key }}" {% if order.status == key %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+
+        {% if order.payment_method == 'online' %}
+        <div>
+          <strong>Оплата</strong>
+          <p>{{ payment_status_labels.get(order.payment_status, order.payment_status) }}</p>
+          <small class="muted">Для онлайн-оплати статус оновлюється автоматично платіжним провайдером.</small>
+        </div>
+        {% else %}
+        <label>Оплата
+          <select name="payment_status">
+            {% for key,label in payment_status_labels.items() %}
+            <option value="{{ key }}" {% if order.payment_status == key %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        {% endif %}
+
+        <label>ТТН / трек-номер
+          <input name="tracking_number" value="{{ order.tracking_number or '' }}">
+        </label>
+
+        <button class="primary-button" type="submit">Зберегти зміни</button>
+
+        {% if order.status == 'cancelled' %}
+        <p class="muted">При скасуванні відстежувані залишки повертаються на склад автоматично.</p>
+        {% endif %}
+      </form>
+
+      {% if order.payment_method == 'online' %}
+      {% set resolved_provider = order.payment_provider or ('monobank' if order.mono_invoice_id else 'liqpay') %}
+      <section class="panel form-stack">
+        <h2>Онлайн-оплата</h2>
+        <p><strong>Провайдер:</strong> {{ 'LiqPay / ПриватБанк' if resolved_provider == 'liqpay' else 'Monobank' }}</p>
+        <p><strong>Статус:</strong> {{ payment_status_labels.get(order.payment_status, order.payment_status) }}</p>
+        {% if order.paid_at %}<p><strong>Оплачено:</strong> {{ order.paid_at.strftime('%d.%m.%Y %H:%M') }}</p>{% endif %}
+        {% if order.refunded_at %}<p><strong>Повернено:</strong> {{ order.refunded_at.strftime('%d.%m.%Y %H:%M') }}</p>{% endif %}
+
+        {% if resolved_provider == 'liqpay' and order.payment_status == 'paid' %}
+        <form
+          method="post"
+          action="/admin/orders/{{ order.id }}/refund"
+          onsubmit="return confirm('Повернути клієнту всю суму {{ order.total|money }} грн через LiqPay?');">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="primary-button" type="submit">Повернути {{ order.total|money }} грн</button>
+        </form>
+        <p class="muted">Ця кнопка виконує повне повернення суми замовлення через LiqPay API.</p>
+        {% elif order.payment_status == 'refund_pending' %}
+        <p class="muted">Запит на повернення вже передано LiqPay. Остаточний статус оновиться після підтвердження.</p>
+        {% elif order.payment_status == 'refunded' %}
+        <p class="muted">Кошти за цим онлайн-платежем уже повернено.</p>
+        {% elif resolved_provider != 'liqpay' %}
+        <p class="muted">Автоматична кнопка повернення в цьому оновленні реалізована для LiqPay.</p>
+        {% endif %}
+      </section>
+      {% endif %}
+    </aside>
+  </div>
+</section>
+{% endblock %}

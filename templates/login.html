@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% block title %}Вхід — TopBearing{% endblock %}
+{% block content %}
+<section class="auth-shell container">
+  <div class="auth-card">
+    <div class="auth-brand"><span class="brand-mark">TB</span><strong>TopBearing</strong></div>
+    <h1>Вхід в акаунт</h1>
+    {% if error %}<div class="form-error">{{ error }}</div>{% endif %}
+    <form method="post" action="/login" class="form-stack">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="next" value="{{ next_url or '' }}">
+      <label>Email<input type="email" name="email" autocomplete="email" required></label>
+      <label>Пароль<input type="password" name="password" autocomplete="current-password" required></label>
+      <div class="form-between"><a href="/forgot-password">Забули пароль?</a></div>
+      <button class="primary-button" type="submit">Увійти</button>
+    </form>
+    <p class="auth-bottom">Немає акаунта? <a href="/register">Зареєструватися</a></p>
+  </div>
+</section>
+{% endblock %}

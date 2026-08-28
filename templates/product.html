@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+{% block title %}{{ product.name }} — TopBearing{% endblock %}
+{% block content %}
+<section class="container product-page">
+  <div class="breadcrumbs"><a href="/">Головна</a><span>/</span><a href="/catalog?category={{ product.category.code }}">{{ product.category.name or 'Каталог' }}</a><span>/</span><span>{{ product.name }}</span></div>
+  <div class="product-main">
+    <div class="product-gallery">
+      <div class="product-main-image" data-gallery-main>{% if product.primary_image %}<img src="{{ product.primary_image }}" alt="{{ product.name }}">{% else %}<span class="image-placeholder large">TB</span>{% endif %}</div>
+      {% if product.images|length > 1 %}<div class="gallery-thumbs">{% for image in product.images %}<button type="button" class="gallery-thumb {% if loop.first %}active{% endif %}" data-gallery-thumb data-src="{{ image.url }}"><img src="{{ image.url }}" alt="{{ image.alt_text or product.name }}"></button>{% endfor %}</div>{% endif %}
+    </div>
+
+    <div class="product-info">
+      {% if product.brand and product.brand.name != 'Без бренду' %}<div class="product-brand big">{{ product.brand.name }}</div>{% endif %}
+      <div class="product-title-actions"><h1>{{ product.name }}</h1><button class="favorite-btn product-favorite" type="button" data-favorite-button data-product-id="{{ product.id }}" aria-label="Додати в обране">♡</button></div>
+      {% if product.short_description %}<p class="product-lead">{{ product.short_description }}</p>{% endif %}
+      <div class="product-buy-row"><strong class="product-price large-price">{{ product.price|money }} грн</strong><span class="availability availability-{{ product.storefront_availability }}">{{ availability_label(product) }}</span></div>
+      {% if product.storefront_availability != 'out_of_stock' %}<form action="/cart/add/{{ product.id }}" method="post" class="product-buy-form"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="next" value="/cart"><label>Кількість<input type="number" name="qty" min="1" value="1"></label><button class="primary-button large-button" type="submit">У кошик</button></form>{% endif %}
+
+      <dl class="spec-list summary-specs">
+        {% if product.brand and product.brand.name != 'Без бренду' %}<div><dt>Бренд</dt><dd>{{ product.brand.name }}</dd></div>{% endif %}
+        {% if product.brand and product.brand.country %}<div><dt>Країна бренду</dt><dd>{{ product.brand.country }}</dd></div>{% endif %}
+        <div><dt>Основне маркування</dt><dd>{{ product.manufacturer_code or product.sku }}</dd></div>
+        {% set aliases = alternative_marking_list(product.alternative_markings) %}
+        {% if aliases %}<div><dt>Інші маркування</dt><dd>{{ aliases|join(', ') }}</dd></div>{% endif %}
+        {% if product.manufacturing_country %}<div><dt>Виготовлено</dt><dd>{{ product.manufacturing_country }}</dd></div>{% endif %}
+        {% set kind = product.category.code|category_kind %}
+        {% if kind == 'bearings' and product.bearing_spec %}<div><dt>Розмір</dt><dd>{{ product.bearing_spec.inner_diameter_mm }} × {{ product.bearing_spec.outer_diameter_mm }} × {{ product.bearing_spec.width_mm }} мм</dd></div>{% endif %}
+        {% if kind == 'belts' and product.belt_spec %}<div><dt>Профіль / довжина</dt><dd>{{ product.belt_spec.profile or '—' }} / {{ product.belt_spec.length_mm or '—' }} мм</dd></div>{% endif %}
+        {% if kind == 'seals' and product.seal_spec %}<div><dt>Розмір</dt><dd>{{ product.seal_spec.inner_diameter_mm }} × {{ product.seal_spec.outer_diameter_mm }} × {{ product.seal_spec.width_mm }} мм</dd></div>{% endif %}
+        {% if kind == 'lubricants' and product.lubricant_spec %}<div><dt>Фасування</dt><dd>{{ product.lubricant_spec.package_size or '—' }}</dd></div>{% endif %}
+      </dl>
+    </div>
+  </div>
+
+  <div class="product-details-grid">
+    <section class="panel"><h2>Характеристики</h2><dl class="spec-list">
+      {% set kind = product.category.code|category_kind %}
+      {% if kind == 'bearings' and product.bearing_spec %}
+        {% for label, value in [('Тип', product.bearing_spec.subtype), ('Внутрішній діаметр', product.bearing_spec.inner_diameter_mm), ('Зовнішній діаметр', product.bearing_spec.outer_diameter_mm), ('Ширина', product.bearing_spec.width_mm), ('Кількість рядів', product.bearing_spec.rows), ('Сепаратор', product.bearing_spec.cage_type), ('Ущільнення', product.bearing_spec.seal_type), ('Зазор', product.bearing_spec.clearance), ('Клас точності', product.bearing_spec.precision_class)] %}{% if value is not none and value != '' %}<div><dt>{{ label }}</dt><dd>{{ value }}{% if label in ['Внутрішній діаметр','Зовнішній діаметр','Ширина'] %} мм{% endif %}</dd></div>{% endif %}{% endfor %}
+      {% elif kind == 'belts' and product.belt_spec %}
+        {% for label, value in [('Тип', product.belt_spec.belt_type), ('Профіль', product.belt_spec.profile), ('Довжина', product.belt_spec.length_mm), ('Ширина', product.belt_spec.width_mm)] %}{% if value is not none and value != '' %}<div><dt>{{ label }}</dt><dd>{{ value }}{% if label in ['Довжина','Ширина'] %} мм{% endif %}</dd></div>{% endif %}{% endfor %}
+      {% elif kind == 'seals' and product.seal_spec %}
+        {% for label, value in [('Тип', product.seal_spec.seal_type), ('Внутрішній діаметр', product.seal_spec.inner_diameter_mm), ('Зовнішній діаметр', product.seal_spec.outer_diameter_mm), ('Ширина', product.seal_spec.width_mm), ('Матеріал', product.seal_spec.material), ('Тип кромки', product.seal_spec.lip_type)] %}{% if value is not none and value != '' %}<div><dt>{{ label }}</dt><dd>{{ value }}{% if label in ['Внутрішній діаметр','Зовнішній діаметр','Ширина'] %} мм{% endif %}</dd></div>{% endif %}{% endfor %}
+      {% elif kind == 'lubricants' and product.lubricant_spec %}
+        {% for label, value in [('Тип', product.lubricant_spec.lubricant_type), ('В’язкість / клас', product.lubricant_spec.viscosity), ('Основа', product.lubricant_spec.base_type), ('Фасування', product.lubricant_spec.package_size), ('Температурний діапазон', product.lubricant_spec.temperature_range)] %}{% if value %}<div><dt>{{ label }}</dt><dd>{{ value }}</dd></div>{% endif %}{% endfor %}
+      {% else %}<div><dt>Категорія</dt><dd>{{ product.category.name }}</dd></div>{% endif %}
+    </dl></section>
+    <section class="panel"><h2>Доставка та оплата</h2><ul class="clean-list"><li><strong>Нова пошта</strong> — відділення або поштомат</li><li><strong>Укрпошта</strong> — відділення за індексом</li><li><strong>Самовивіз</strong> — за домовленістю</li><li>{{ settings.shipping_notice }}</li></ul><p class="muted">Післяплата доступна від {{ settings.cod_min_total|money }} грн, якщо вона увімкнена в налаштуваннях магазину. Для менших замовлень — онлайн-оплата або оплата за рахунком.</p></section>
+  </div>
+  {% if product.description %}<section class="panel product-description"><h2>Опис</h2><div class="rich-text">{{ product.description|e|replace('\n','<br>')|safe }}</div></section>{% endif %}
+
+  {% if related %}<section class="section-block"><div class="section-heading"><h2>Схожі товари</h2></div><div class="product-grid">{% for product in related %}{% include '_product_card.html' %}{% endfor %}</div></section>{% endif %}
+</section>
+{% endblock %}

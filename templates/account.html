@@ -1,0 +1,11 @@
+{% extends 'base.html' %}
+{% block title %}Мій акаунт — TopBearing{% endblock %}
+{% block content %}
+<section class="container page-shell"><div class="page-heading"><div><span class="eyebrow">Акаунт</span><h1>{{ user.full_name or user.email }}</h1></div>{% if user.role == 'admin' %}<a class="secondary-button" href="/admin">Адмін-панель</a>{% endif %}</div>
+<div class="account-grid">
+  <section class="panel"><h2>Контактні дані</h2><dl class="detail-list"><div><dt>Email</dt><dd>{{ user.email }}</dd></div>{% if user.phone %}<div><dt>Телефон</dt><dd>{{ user.phone }}</dd></div>{% endif %}<div><dt>Роль</dt><dd>{{ 'Адміністратор' if user.role == 'admin' else 'Клієнт' }}</dd></div></dl></section>
+  <section class="panel"><h2>Змінити пароль</h2><form method="post" action="/account/password" class="form-stack compact"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><label>Поточний пароль<input type="password" name="current_password" required></label><label>Новий пароль<input type="password" name="new_password" minlength="8" required></label><label>Повторіть новий пароль<input type="password" name="confirm_password" minlength="8" required></label><button class="primary-button" type="submit">Змінити пароль</button></form></section>
+</div>
+<section class="panel account-orders"><div class="section-heading"><h2>Мої замовлення</h2></div>{% if orders %}<div class="orders-table-wrap"><table class="data-table"><thead><tr><th>№</th><th>Дата</th><th>Статус</th><th>Оплата</th><th>Сума</th></tr></thead><tbody>{% for order in orders %}<tr><td><a href="/order/{{ order.number }}/success">{{ order.number }}</a></td><td>{{ order.created_at.strftime('%d.%m.%Y') if order.created_at else '—' }}</td><td><span class="status-pill status-{{ order.status }}">{{ order_status_labels.get(order.status, order.status) }}</span></td><td>{{ payment_status_labels.get(order.payment_status, order.payment_status) }}</td><td>{{ order.total|money }} грн</td></tr>{% endfor %}</tbody></table></div>{% else %}<div class="empty-inline">Замовлень ще немає.</div>{% endif %}</section>
+</section>
+{% endblock %}

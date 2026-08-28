@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% block title %}TopBearing — підшипники, ремені, сальники{% endblock %}
+{% block content %}
+<section class="hero container">
+  <div class="hero-copy">
+    <span class="eyebrow">Промислові комплектуючі</span>
+    <h1>Знайдіть потрібний товар за номером або точними розмірами</h1>
+    <p>Пошук працює за назвою, артикулом, брендом і форматами розмірів на кшталт <strong>25-54-10</strong>.</p>
+    <form action="/catalog" method="get" class="hero-search"><input name="q" placeholder="Наприклад: 6319 C4 FAG або 25-54-10"><button type="submit">Знайти</button></form>
+  </div>
+  <div class="hero-panel"><strong>Відправка 1–3 робочих дні</strong><span>Нова пошта • Укрпошта • самовивіз</span><span>Онлайн-оплата, рахунок або післяплата за умовами магазину</span></div>
+</section>
+
+<section class="container section-block">
+  <div class="section-heading"><div><span class="eyebrow">Каталог</span><h2>Категорії</h2></div><a href="/catalog">Усі товари →</a></div>
+  <div class="category-grid">
+    {% for category in categories %}<a class="category-card" href="/catalog?category={{ category.code }}"><span class="category-icon">{{ loop.index|string }}</span><strong>{{ category.name or category.code }}</strong><small>{{ category.description or '' }}</small></a>{% endfor %}
+  </div>
+</section>
+
+{% if featured %}
+<section class="container section-block">
+  <div class="section-heading"><div><span class="eyebrow">Нові позиції</span><h2>Товари</h2></div></div>
+  <div class="product-grid">{% for product in featured %}{% include '_product_card.html' %}{% endfor %}</div>
+</section>
+{% endif %}
+{% endblock %}

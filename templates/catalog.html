@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+{% block title %}Каталог — TopBearing{% endblock %}
+{% block content %}
+<section class="container catalog-page">
+  <div class="breadcrumbs"><a href="/">Головна</a><span>/</span><span>Каталог</span></div>
+  <div class="catalog-title-row"><div><h1>Каталог</h1><p>Знайдено товарів: {{ total }}</p></div></div>
+
+  <div class="mobile-filter-bar mobile-only"><button type="button" class="secondary-button" data-filter-open>Фільтри</button><select data-sort-select aria-label="Сортування"><option value="relevance" {% if params.get('sort','relevance')=='relevance' %}selected{% endif %}>За релевантністю</option><option value="newest" {% if params.get('sort')=='newest' %}selected{% endif %}>Новіші</option><option value="price_asc" {% if params.get('sort')=='price_asc' %}selected{% endif %}>Ціна ↑</option><option value="price_desc" {% if params.get('sort')=='price_desc' %}selected{% endif %}>Ціна ↓</option></select></div>
+
+  <div class="catalog-layout">
+    <aside class="filters-panel" data-filter-panel>
+      <div class="filters-head mobile-only"><strong>Фільтри</strong><button type="button" data-filter-close>×</button></div>
+      <form action="/catalog" method="get" class="filters-form" data-filter-form>
+        {% if params.get('q') %}<input type="hidden" name="q" value="{{ params.get('q') }}">{% endif %}
+        <input type="hidden" name="sort" value="{{ params.get('sort','relevance') }}" data-sort-hidden>
+        <label>Категорія<select name="category" data-category-filter><option value="">Усі категорії</option>{% for category in categories %}<option value="{{ category.code }}" data-kind="{{ category.code|category_kind }}" {% if active_category == (category.code|category_kind) %}selected{% endif %}>{{ category.name or category.code }}</option>{% endfor %}</select></label>
+        <label>Бренд<select name="brand"><option value="">Усі бренди</option>{% for brand in brands %}{% if brand.name != 'Без бренду' %}<option value="{{ brand.id }}" {% if params.get('brand') == brand.id|string %}selected{% endif %}>{{ brand.name }}</option>{% endif %}{% endfor %}</select></label>
+
+        <div class="filter-group" data-filter-group="bearings">
+          <h3>Підшипники</h3>
+          <label>Тип<input name="subtype" value="{{ params.get('subtype','') }}" placeholder="радіальний, сферичний..."></label>
+          <div class="range-row"><label>d від<input inputmode="decimal" name="inner_min" value="{{ params.get('inner_min','') }}"></label><label>d до<input inputmode="decimal" name="inner_max" value="{{ params.get('inner_max','') }}"></label></div>
+          <div class="range-row"><label>D від<input inputmode="decimal" name="outer_min" value="{{ params.get('outer_min','') }}"></label><label>D до<input inputmode="decimal" name="outer_max" value="{{ params.get('outer_max','') }}"></label></div>
+        </div>
+
+        <div class="filter-group" data-filter-group="belts">
+          <h3>Ремені</h3><label>Профіль<input name="profile" value="{{ params.get('profile','') }}" placeholder="A, B, SPZ..."></label><div class="range-row"><label>Довжина від<input inputmode="decimal" name="length_min" value="{{ params.get('length_min','') }}"></label><label>до<input inputmode="decimal" name="length_max" value="{{ params.get('length_max','') }}"></label></div>
+        </div>
+
+        <div class="filter-group" data-filter-group="seals">
+          <h3>Сальники</h3><label>Матеріал<input name="material" value="{{ params.get('material','') }}" placeholder="NBR, FKM..."></label>
+        </div>
+
+        <div class="filter-group" data-filter-group="lubricants">
+          <h3>Змащення</h3><label>В'язкість / клас<input name="viscosity" value="{{ params.get('viscosity','') }}" placeholder="NLGI 2, ISO VG 68..."></label>
+        </div>
+
+        <div class="filter-actions"><button class="primary-button" type="submit">Застосувати</button><a class="text-button" href="/catalog{% if params.get('q') %}?q={{ params.get('q')|urlencode }}{% endif %}">Скинути</a></div>
+      </form>
+    </aside>
+
+    <div class="catalog-results">
+      <div class="catalog-toolbar desktop-only"><span>{{ total }} позицій</span><label>Сортування<select data-sort-select><option value="relevance" {% if params.get('sort','relevance')=='relevance' %}selected{% endif %}>За релевантністю</option><option value="newest" {% if params.get('sort')=='newest' %}selected{% endif %}>Новіші</option><option value="price_asc" {% if params.get('sort')=='price_asc' %}selected{% endif %}>Від дешевших</option><option value="price_desc" {% if params.get('sort')=='price_desc' %}selected{% endif %}>Від дорожчих</option></select></label></div>
+      {% if products %}<div class="product-grid catalog-grid">{% for product in products %}{% include '_product_card.html' %}{% endfor %}</div>{% else %}<div class="empty-state"><div class="empty-icon">⌕</div><h2>Нічого не знайдено</h2><p>Спробуйте інший номер, бренд або формат розміру.</p><a class="primary-button" href="/catalog">Очистити фільтри</a></div>{% endif %}
+
+      {% if pages > 1 %}<nav class="pagination" aria-label="Сторінки">{% for p in range(1, pages+1) %}<a class="{% if p == page %}active{% endif %}" href="?{% for k,v in params.items() if k != 'page' %}{{ k }}={{ v|urlencode }}&{% endfor %}page={{ p }}">{{ p }}</a>{% endfor %}</nav>{% endif %}
+    </div>
+  </div>
+</section>
+<div class="filter-backdrop" data-filter-backdrop hidden></div>
+{% endblock %}

@@ -1,0 +1,11 @@
+{% extends 'base.html' %}
+{% block title %}Кошик — TopBearing{% endblock %}
+{% block content %}
+<section class="container page-shell"><div class="breadcrumbs"><a href="/">Головна</a><span>/</span><span>Кошик</span></div><h1>Кошик</h1>
+{% if items %}
+<div class="cart-layout"><div class="panel"><form method="post" action="/cart/update"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><div class="cart-items">{% for item in items %}<article class="cart-item"><a class="cart-thumb" href="/product/{{ item.product.slug }}">{% if item.product.primary_image %}<img src="{{ item.product.primary_image }}" alt="{{ item.product.name }}">{% else %}<span class="image-placeholder">TB</span>{% endif %}</a><div class="cart-item-info"><a class="cart-item-title" href="/product/{{ item.product.slug }}">{{ item.product.name }}</a>{% if item.product.brand and item.product.brand.name != 'Без бренду' %}<span>{{ item.product.brand.name }}</span>{% endif %}<strong>{{ item.product.price|money }} грн</strong></div><label class="qty-field"><span>К-сть</span><input type="number" min="1" name="qty_{{ item.product.id }}" value="{{ item.qty }}"></label><strong class="line-total">{{ item.line_total|money }} грн</strong></article>{% endfor %}</div><div class="cart-update-row"><button class="secondary-button" type="submit">Оновити кошик</button></div></form>
+{% for item in items %}<form action="/cart/remove/{{ item.product.id }}" method="post" class="cart-remove-form"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Прибрати {{ item.product.name }}</button></form>{% endfor %}
+</div><aside class="panel cart-summary"><h2>Разом</h2><div class="summary-row"><span>Товари</span><strong>{{ subtotal|money }} грн</strong></div><div class="summary-row"><span>Доставка</span><span>за тарифами перевізника</span></div><div class="summary-total"><span>До сплати</span><strong>{{ subtotal|money }} грн</strong></div><a class="primary-button" href="/checkout">Оформити замовлення</a><p class="muted">{{ settings.shipping_notice }}</p></aside></div>
+{% else %}<div class="empty-state cart-empty"><div class="empty-icon">▢</div><h2>Кошик порожній</h2><p>Знайдіть потрібну позицію за номером або технічними параметрами.</p><a class="primary-button" href="/catalog">Перейти в каталог</a></div>{% endif %}
+</section>
+{% endblock %}

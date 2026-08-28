@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% block title %}Реєстрація — TopBearing{% endblock %}
+{% block content %}
+<section class="auth-shell container"><div class="auth-card wide-auth"><h1>Створити акаунт</h1>
+{% if error %}<div class="form-error">{{ error }}</div>{% endif %}
+<form method="post" action="/register" class="form-stack">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<label>Ім’я та прізвище<input name="full_name" autocomplete="name"></label>
+<label>Телефон<input name="phone" autocomplete="tel" placeholder="+380..."></label>
+<label>Email<input type="email" name="email" autocomplete="email" required></label>
+<div class="form-grid-2"><label>Пароль<input type="password" name="password" minlength="8" required></label><label>Повторіть пароль<input type="password" name="confirm_password" minlength="8" required></label></div>
+<button class="primary-button" type="submit">Зареєструватися</button>
+</form><p class="auth-bottom">Вже є акаунт? <a href="/login">Увійти</a></p></div></section>
+{% endblock %}

@@ -1,0 +1,10 @@
+<aside class="admin-sidebar">
+  <a class="brand admin-brand" href="/admin"><span class="brand-mark">TB</span><span>TopBearing</span></a>
+  <nav>
+    <a href="/admin" class="{% if request.url.path == '/admin' %}active{% endif %}">Огляд</a>
+    <a href="/admin/products" class="{% if '/admin/products' in request.url.path %}active{% endif %}">Товари</a>
+    <a href="/admin/orders" class="{% if '/admin/orders' in request.url.path %}active{% endif %}">Замовлення</a>
+    <a href="/admin/settings" class="{% if '/admin/settings' in request.url.path %}active{% endif %}">Доставка й оплата</a>
+  </nav>
+  <div class="admin-side-bottom"><a href="/" target="_blank">Відкрити магазин ↗</a><form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="link-button" type="submit">Вийти</button></form></div>
+</aside>

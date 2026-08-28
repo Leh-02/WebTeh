@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff">
+  <title>{% block title %}TopBearing{% endblock %}</title>
+  <meta name="description" content="TopBearing — підшипники, пасові ремені, сальники, змащення та промислові аксесуари.">
+  <link rel="stylesheet" href="{{ url_for('static', path='css/app.css') }}">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-main container">
+      <button class="icon-button mobile-only" type="button" aria-label="Відкрити меню" data-menu-open>
+        <span></span><span></span><span></span>
+      </button>
+      <a class="brand-logo" href="/" aria-label="TopBearing — головна">
+        <span class="brand-mark">TB</span><span class="brand-name">TopBearing</span>
+      </a>
+
+      <nav class="desktop-nav desktop-only" aria-label="Основна навігація">
+        <a href="/catalog">Каталог</a>
+        <a href="/favorites">Обране <span class="nav-count" data-favorites-count>0</span></a>
+        <a href="/contacts">Контакти</a>
+        {% if current_user %}
+          {% if current_user.role == 'admin' %}<a href="/admin">Адмін-панель</a>{% endif %}
+          <a href="/account">Акаунт</a>
+        {% else %}
+          <a href="/login">Увійти</a>
+        {% endif %}
+      </nav>
+
+      <a class="cart-link" href="/cart" aria-label="Кошик">
+        <span class="cart-icon">▣</span><span class="desktop-only">Кошик</span><span class="nav-count">{{ cart_count }}</span>
+      </a>
+    </div>
+
+    <div class="header-search container">
+      <form action="/catalog" method="get" class="search-form" role="search">
+        <input name="q" value="{{ request.query_params.get('q', '') if request.url.path == '/catalog' else '' }}" placeholder="Пошук за номером або розміром: 25-54-10" autocomplete="off" aria-label="Пошук товару">
+        <button type="submit">Знайти</button>
+      </form>
+      {% if settings.contact_phone %}<a class="header-phone desktop-only" href="tel:{{ settings.contact_phone|replace(' ', '') }}">{{ settings.contact_phone }}</a>{% endif %}
+    </div>
+  </header>
+
+  <div class="mobile-drawer-backdrop" data-menu-backdrop hidden></div>
+  <aside class="mobile-drawer" data-mobile-menu aria-hidden="true">
+    <div class="mobile-drawer-head">
+      <a class="brand-logo" href="/"><span class="brand-mark">TB</span><span class="brand-name">TopBearing</span></a>
+      <button class="drawer-close" type="button" aria-label="Закрити меню" data-menu-close>×</button>
+    </div>
+    <div class="mobile-drawer-scroll">
+      <nav class="mobile-nav">
+        <a href="/">Головна</a>
+        <a href="/catalog">Усі товари</a>
+        {% for category in categories %}
+          <a href="/catalog?category={{ category.code }}">{{ category.name or category.code }}</a>
+        {% endfor %}
+        <a href="/favorites">Обране <span data-favorites-count>0</span></a>
+        <a href="/contacts">Контакти</a>
+        {% if current_user %}
+          <a href="/account">Мій акаунт</a>
+          {% if current_user.role == 'admin' %}<a href="/admin">Адмін-панель</a>{% endif %}
+          <form action="/logout" method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="drawer-link-button" type="submit">Вийти</button>
+          </form>
+        {% else %}
+          <a href="/login">Увійти</a>
+          <a href="/register">Зареєструватися</a>
+        {% endif %}
+      </nav>
+      {% if settings.contact_phone or settings.contact_email %}
+        <div class="drawer-contacts">
+          {% if settings.contact_phone %}<a href="tel:{{ settings.contact_phone|replace(' ', '') }}">{{ settings.contact_phone }}</a>{% endif %}
+          {% if settings.contact_email %}<a href="mailto:{{ settings.contact_email }}">{{ settings.contact_email }}</a>{% endif %}
+        </div>
+      {% endif %}
+    </div>
+  </aside>
+
+  {% if flashes %}
+    <div class="flash-stack container" aria-live="polite">
+      {% for item in flashes %}<div class="flash flash-{{ item.kind }}">{{ item.message }}</div>{% endfor %}
+    </div>
+  {% endif %}
+
+  <main>{% block content %}{% endblock %}</main>
+
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <div>
+        <a class="brand-logo" href="/"><span class="brand-mark">TB</span><span class="brand-name">TopBearing</span></a>
+        <p>Підшипники, ремені, сальники, змащення та промислові комплектуючі.</p>
+      </div>
+      <div><strong>Покупцям</strong><a href="/catalog">Каталог</a><a href="/contacts">Доставка та контакти</a><a href="/favorites">Обране</a></div>
+      <div><strong>Контакти</strong>{% if settings.contact_phone %}<a href="tel:{{ settings.contact_phone|replace(' ', '') }}">{{ settings.contact_phone }}</a>{% endif %}{% if settings.contact_email %}<a href="mailto:{{ settings.contact_email }}">{{ settings.contact_email }}</a>{% endif %}{% if settings.contact_address %}<span>{{ settings.contact_address }}</span>{% endif %}</div>
+    </div>
+    <div class="container footer-note">{{ settings.shipping_notice }}</div>
+  </footer>
+
+  <script src="{{ url_for('static', path='js/app.js') }}" defer></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>
