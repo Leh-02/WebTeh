@@ -1,3 +1,66 @@
 {% extends 'base.html' %}
 {% block title %}Налаштування — TopBearing Admin{% endblock %}
-{% block content %}<section class="container page-shell admin-shell"><div class="page-heading"><div><span class="eyebrow">Адмін-панель</span><h1>Налаштування магазину</h1></div></div><nav class="admin-nav"><a href="/admin">Огляд</a><a href="/admin/products">Товари</a><a href="/admin/orders">Замовлення</a><a class="active" href="/admin/settings">Налаштування</a></nav><form method="post" action="/admin/settings" class="settings-grid"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><section class="panel"><h2>Оплата</h2><label class="check-row"><input type="checkbox" name="online_payment_enabled" value="1" {% if store_settings.online_payment_enabled %}checked{% endif %}><span><strong>Онлайн-оплата</strong><small>{% if mono_ready %}Monobank token налаштований{% else %}Потрібно додати MONOBANK_TOKEN у .env{% endif %}</small></span></label><label class="check-row"><input type="checkbox" name="bank_transfer_enabled" value="1" {% if store_settings.bank_transfer_enabled %}checked{% endif %}><span><strong>Оплата за рахунком</strong></span></label><label class="check-row"><input type="checkbox" name="cod_enabled" value="1" {% if store_settings.cod_enabled %}checked{% endif %}><span><strong>Післяплата</strong></span></label><label>Мінімальна сума для післяплати, грн<input type="number" min="0" step="1" name="cod_min_total" value="{{ store_settings.cod_min_total }}"></label><div class="shipping-note">Логіка проста: нижче цього ліміту післяплата не пропонується. Жодних окремих правил оплати на рівні товару чи категорії.</div></section><section class="panel"><h2>Контакти</h2><label>Телефон<input name="contact_phone" value="{{ store_settings.contact_phone or '' }}" placeholder="+380..."></label><label>Email<input type="email" name="contact_email" value="{{ store_settings.contact_email or '' }}"></label><label>Адреса<input name="contact_address" value="{{ store_settings.contact_address or '' }}"></label><label>Telegram<input name="contact_telegram" value="{{ store_settings.contact_telegram or '' }}" placeholder="@topbearing або посилання"></label></section><section class="panel"><h2>Відправка</h2><label>Повідомлення про строки<input name="shipping_notice" value="{{ store_settings.shipping_notice }}"></label><p class="muted">Цей текст показується на товарі, в кошику, checkout та контактах.</p><button class="primary-button" type="submit">Зберегти налаштування</button></section></form></section>{% endblock %}
+{% block content %}
+<section class="container page-shell admin-shell">
+  <div class="page-heading">
+    <div><span class="eyebrow">Адмін-панель</span><h1>Налаштування магазину</h1></div>
+  </div>
+
+  <nav class="admin-nav">
+    <a href="/admin">Огляд</a>
+    <a href="/admin/products">Товари</a>
+    <a href="/admin/orders">Замовлення</a>
+    <a class="active" href="/admin/settings">Налаштування</a>
+  </nav>
+
+  <form method="post" action="/admin/settings" class="settings-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    <section class="panel">
+      <h2>Оплата</h2>
+
+      <label class="check-row">
+        <input type="checkbox" name="online_payment_enabled" value="1" {% if store_settings.online_payment_enabled %}checked{% endif %}>
+        <span>
+          <strong>Онлайн-оплата</strong>
+          {% if liqpay_ready %}
+            <small>LiqPay налаштований і використовується як основний провайдер.</small>
+          {% elif mono_ready %}
+            <small>LiqPay не налаштований. Тимчасово доступний резервний Monobank.</small>
+          {% else %}
+            <small>Для LiqPay додайте LIQPAY_PUBLIC_KEY і LIQPAY_PRIVATE_KEY у .env та перезапустіть сервер.</small>
+          {% endif %}
+        </span>
+      </label>
+
+      <label class="check-row">
+        <input type="checkbox" name="bank_transfer_enabled" value="1" {% if store_settings.bank_transfer_enabled %}checked{% endif %}>
+        <span><strong>Оплата за рахунком</strong><small>Окремий спосіб оплати, не заміна LiqPay.</small></span>
+      </label>
+
+      <label class="check-row">
+        <input type="checkbox" name="cod_enabled" value="1" {% if store_settings.cod_enabled %}checked{% endif %}>
+        <span><strong>Післяплата</strong></span>
+      </label>
+
+      <label>Мінімальна сума для післяплати, грн<input type="number" min="0" step="1" name="cod_min_total" value="{{ store_settings.cod_min_total }}"></label>
+      <div class="shipping-note">Логіка проста: нижче цього ліміту післяплата не пропонується. Жодних окремих правил оплати на рівні товару чи категорії.</div>
+    </section>
+
+    <section class="panel">
+      <h2>Контакти</h2>
+      <label>Телефон<input name="contact_phone" value="{{ store_settings.contact_phone or '' }}" placeholder="+380..."></label>
+      <label>Email<input type="email" name="contact_email" value="{{ store_settings.contact_email or '' }}"></label>
+      <label>Адреса<input name="contact_address" value="{{ store_settings.contact_address or '' }}"></label>
+      <label>Telegram<input name="contact_telegram" value="{{ store_settings.contact_telegram or '' }}" placeholder="@topbearing або посилання"></label>
+    </section>
+
+    <section class="panel">
+      <h2>Відправка</h2>
+      <label>Повідомлення про строки<input name="shipping_notice" value="{{ store_settings.shipping_notice }}"></label>
+      <p class="muted">Цей текст показується на товарі, в кошику, checkout та контактах.</p>
+      <button class="primary-button" type="submit">Зберегти налаштування</button>
+    </section>
+  </form>
+</section>
+{% endblock %}

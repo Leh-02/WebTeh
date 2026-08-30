@@ -2,9 +2,36 @@
 {% block title %}Адмін-панель — TopBearing{% endblock %}
 {% block content %}
 <section class="container page-shell admin-shell">
-  <div class="page-heading"><div><span class="eyebrow">Адміністрування</span><h1>Адмін-панель</h1></div><a class="secondary-button" href="/account">Мій акаунт</a></div>
-  <nav class="admin-nav"><a class="active" href="/admin">Огляд</a><a href="/admin/products">Товари</a><a href="/admin/orders">Замовлення</a><a href="/admin/settings">Налаштування</a></nav>
-  <div class="stats-grid"><a class="stat-card" href="/admin/products"><span>Активні товари</span><strong>{{ product_count }}</strong></a><a class="stat-card" href="/admin/orders?status=new"><span>Нові замовлення</span><strong>{{ new_orders }}</strong></a><a class="stat-card" href="/admin/orders"><span>Потребують оплати</span><strong>{{ unpaid }}</strong></a></div>
-  <div class="admin-actions"><a class="primary-button" href="/admin/products/new">+ Додати товар</a><a class="secondary-button" href="/admin/orders">Переглянути замовлення</a></div>
+  <div class="page-heading">
+    <div>
+      <span class="eyebrow">Адміністрування</span>
+      <h1>Адмін-панель</h1>
+    </div>
+    <div class="page-heading-actions">
+      <a class="secondary-button" href="/account">Мій акаунт</a>
+      <form class="desktop-only" action="/logout" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="secondary-button" type="submit">Вийти</button>
+      </form>
+    </div>
+  </div>
+
+  <nav class="admin-nav">
+    <a class="active" href="/admin">Огляд</a>
+    <a href="/admin/products">Товари</a>
+    <a href="/admin/orders">Замовлення</a>
+    <a href="/admin/settings">Налаштування</a>
+  </nav>
+
+  <div class="stats-grid">
+    <a class="stat-card" href="/admin/products"><span>Активні товари</span><strong>{{ product_count }}</strong></a>
+    <a class="stat-card" href="/admin/orders?status=new"><span>Нові замовлення</span><strong>{{ new_orders }}</strong></a>
+    <a class="stat-card" href="/admin/orders"><span>Потребують оплати</span><strong>{{ unpaid }}</strong></a>
+  </div>
+
+  <div class="admin-actions">
+    <a class="primary-button" href="/admin/products/new">+ Додати товар</a>
+    <a class="secondary-button" href="/admin/orders">Переглянути замовлення</a>
+  </div>
 </section>
 {% endblock %}

@@ -1,7 +1,70 @@
 {% extends 'base.html' %}
 {% block title %}Замовлення {{ order.number }} — TopBearing{% endblock %}
-{% block content %}<section class="container page-shell"><div class="order-success-card panel"><div class="success-mark">✓</div><span class="eyebrow">Замовлення створено</span><h1>{{ order.number }}</h1><p>Ми отримали замовлення. {{ settings.shipping_notice }}</p><div class="order-status-row"><span class="status-pill status-{{ order.status }}">{{ order_status_labels.get(order.status, order.status) }}</span><span>{{ payment_status_labels.get(order.payment_status, order.payment_status) }}</span></div>
-{% if order.payment_method == 'online' and order.payment_status != 'paid' %}<form method="post" action="/order/{{ order.number }}/pay"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="primary-button" type="submit">Повторити онлайн-оплату</button></form>{% endif %}
-{% if order.payment_method == 'bank_transfer' %}<div class="shipping-note">Менеджер підтвердить реквізити для оплати за рахунком.</div>{% endif %}
-<div class="order-success-grid"><div><h2>Отримувач</h2><p>{{ order.customer_name }}<br>{{ order.customer_phone }}{% if order.customer_email %}<br>{{ order.customer_email }}{% endif %}</p></div><div><h2>Доставка</h2><p>{{ delivery_labels.get(order.delivery_service, order.delivery_service) }}{% if order.delivery_city %}<br>{{ order.delivery_city }}{% endif %}{% if order.delivery_branch %}<br>{{ order.delivery_branch }}{% endif %}{% if order.delivery_postal_code %}<br>Індекс {{ order.delivery_postal_code }}{% endif %}</p></div></div>
-<div class="order-items-summary">{% for item in order.items %}<div><span>{{ item.name_snapshot }} × {{ item.qty }}</span><strong>{{ item.line_total|money }} грн</strong></div>{% endfor %}<div class="summary-total"><span>Разом</span><strong>{{ order.total|money }} грн</strong></div></div><div class="button-row"><a class="secondary-button" href="/catalog">Продовжити покупки</a>{% if current_user %}<a class="text-button" href="/account">Мій акаунт</a>{% endif %}</div></div></section>{% endblock %}
+{% block content %}
+<section class="container page-shell">
+  <div class="order-success-card panel">
+
+    {% if order.payment_method == 'online' and order.payment_status == 'paid' %}
+      <div class="success-mark">✓</div>
+      <span class="eyebrow">Оплату отримано</span>
+      <h1>{{ order.number }}</h1>
+      <p>Оплату підтверджено. Замовлення прийнято в обробку. {{ settings.shipping_notice }}</p>
+
+    {% elif order.payment_method == 'online' %}
+      <div class="success-mark payment-pending-mark">!</div>
+      <span class="eyebrow">Оплата ще не підтверджена</span>
+      <h1>{{ order.number }}</h1>
+      {% if order.payment_status == 'failed' %}
+        <p>Платіж не завершено. Замовлення збережено, але воно ще не вважається оплаченим. Спробуйте відкрити LiqPay ще раз.</p>
+      {% else %}
+        <p>Ми створили номер замовлення для проведення платежу, але підтвердження оплати ще не отримано. Завершіть оплату через LiqPay.</p>
+      {% endif %}
+
+    {% else %}
+      <div class="success-mark">✓</div>
+      <span class="eyebrow">Замовлення створено</span>
+      <h1>{{ order.number }}</h1>
+      <p>Ми отримали замовлення. {{ settings.shipping_notice }}</p>
+    {% endif %}
+
+    <div class="order-status-row">
+      <span class="status-pill status-{{ order.status }}">{{ order_status_labels.get(order.status, order.status) }}</span>
+      <span>{{ payment_status_labels.get(order.payment_status, order.payment_status) }}</span>
+    </div>
+
+    {% if order.payment_method == 'online' and order.payment_status != 'paid' %}
+      <form method="post" action="/order/{{ order.number }}/pay">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="primary-button" type="submit">Перейти до LiqPay</button>
+      </form>
+    {% endif %}
+
+    {% if order.payment_method == 'bank_transfer' %}
+      <div class="shipping-note">Менеджер підтвердить реквізити для оплати за рахунком.</div>
+    {% endif %}
+
+    <div class="order-success-grid">
+      <div>
+        <h2>Отримувач</h2>
+        <p>{{ order.customer_name }}<br>{{ order.customer_phone }}{% if order.customer_email %}<br>{{ order.customer_email }}{% endif %}</p>
+      </div>
+      <div>
+        <h2>Доставка</h2>
+        <p>{{ delivery_labels.get(order.delivery_service, order.delivery_service) }}{% if order.delivery_city %}<br>{{ order.delivery_city }}{% endif %}{% if order.delivery_branch %}<br>{{ order.delivery_branch }}{% endif %}{% if order.delivery_postal_code %}<br>Індекс {{ order.delivery_postal_code }}{% endif %}</p>
+      </div>
+    </div>
+
+    <div class="order-items-summary">
+      {% for item in order.items %}
+        <div><span>{{ item.name_snapshot }} × {{ item.qty }}</span><strong>{{ item.line_total|money }} грн</strong></div>
+      {% endfor %}
+      <div class="summary-total"><span>Разом</span><strong>{{ order.total|money }} грн</strong></div>
+    </div>
+
+    <div class="button-row">
+      <a class="secondary-button" href="/catalog">Продовжити покупки</a>
+      {% if current_user %}<a class="text-button" href="/account">Мій акаунт</a>{% endif %}
+    </div>
+  </div>
+</section>
+{% endblock %}

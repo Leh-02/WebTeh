@@ -1,15 +1,141 @@
 {% extends 'base.html' %}
 {% block title %}Оформлення замовлення — TopBearing{% endblock %}
 {% block content %}
-<section class="container page-shell"><div class="breadcrumbs"><a href="/cart">Кошик</a><span>/</span><span>Оформлення</span></div><h1>Оформлення замовлення</h1>
-{% if errors %}<div class="form-error"><strong>Перевірте форму:</strong><ul>{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul></div>{% endif %}
-<form method="post" action="/checkout" class="checkout-layout" data-checkout-form><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-<div class="checkout-main">
-<section class="panel"><h2>1. Отримувач</h2><div class="form-grid-2"><label>Ім’я та прізвище *<input name="customer_name" autocomplete="name" required value="{{ form_data.get('customer_name','') if form_data else (user.full_name or '') if user else '' }}"></label><label>Телефон *<input name="customer_phone" autocomplete="tel" required placeholder="+380..." value="{{ form_data.get('customer_phone','') if form_data else (user.phone or '') if user else '' }}"></label></div><label>Email<input type="email" name="customer_email" autocomplete="email" value="{{ form_data.get('customer_email','') if form_data else user.email if user else '' }}"></label></section>
-<section class="panel"><h2>2. Доставка</h2><div class="delivery-options"><label class="radio-card"><input type="radio" name="delivery_service" value="nova_poshta" {% if not form_data or form_data.get('delivery_service','nova_poshta')=='nova_poshta' %}checked{% endif %}><span><strong>Нова пошта</strong><small>Відділення або поштомат</small></span></label><label class="radio-card"><input type="radio" name="delivery_service" value="ukrposhta" {% if form_data and form_data.get('delivery_service')=='ukrposhta' %}checked{% endif %}><span><strong>Укрпошта</strong><small>Відділення за індексом</small></span></label><label class="radio-card"><input type="radio" name="delivery_service" value="pickup" {% if form_data and form_data.get('delivery_service')=='pickup' %}checked{% endif %}><span><strong>Самовивіз</strong><small>Узгодимо час отримання</small></span></label></div>
-<div class="delivery-fields" data-delivery-fields><label data-delivery-common>Населений пункт<input name="delivery_city" value="{{ form_data.get('delivery_city','') if form_data else '' }}" placeholder="Полтава"></label><label data-delivery-np>Відділення / поштомат Нової пошти<input name="delivery_branch" value="{{ form_data.get('delivery_branch','') if form_data else '' }}" placeholder="Відділення №... або поштомат №..."></label><label data-delivery-ukr>Поштовий індекс<input name="delivery_postal_code" value="{{ form_data.get('delivery_postal_code','') if form_data else '' }}" inputmode="numeric" placeholder="36000"></label><label data-delivery-ukr>Відділення Укрпошти<input name="delivery_address" value="{{ form_data.get('delivery_address','') if form_data else '' }}" placeholder="Адреса або № відділення"></label></div><div class="shipping-note">{{ settings.shipping_notice }}</div></section>
-<section class="panel"><h2>3. Оплата</h2>{% if payment_options %}<div class="payment-options">{% for option in payment_options %}<label class="radio-card"><input type="radio" name="payment_method" value="{{ option.value }}" {% if (form_data and form_data.get('payment_method')==option.value) or (not form_data and loop.first) %}checked{% endif %}><span><strong>{{ option.label }}</strong>{% if option.value == 'cod' %}<small>Доступно для замовлень від {{ settings.cod_min_total|money }} грн</small>{% elif option.value == 'online' %}{% if online_provider == 'liqpay' %}<small>Visa/Mastercard, Apple Pay, Google Pay — через LiqPay / ПриватБанк</small>{% elif online_provider == 'monobank' %}<small>Безпечна онлайн-оплата через резервний Monobank</small>{% else %}<small>Безпечна онлайн-оплата карткою</small>{% endif %}{% else %}<small>Реквізити підтвердить менеджер</small>{% endif %}</span></label>{% endfor %}</div>{% else %}<div class="form-error">Наразі немає доступного способу оплати. Перевірте налаштування магазину.</div>{% endif %}<label>Коментар до замовлення<textarea name="comment" rows="3" placeholder="За потреби додайте уточнення">{{ form_data.get('comment','') if form_data else '' }}</textarea></label></section>
-</div>
-<aside class="panel checkout-summary"><h2>Ваше замовлення</h2>{% for item in items %}<div class="checkout-item"><span>{{ item.product.name }} × {{ item.qty }}</span><strong>{{ item.line_total|money }} грн</strong></div>{% endfor %}<div class="summary-row"><span>Доставка</span><span>за тарифами перевізника</span></div><div class="summary-total"><span>Разом</span><strong>{{ subtotal|money }} грн</strong></div><button class="primary-button large-button" type="submit" {% if not payment_options %}disabled{% endif %}>Підтвердити замовлення</button><p class="muted">Натискаючи кнопку, ви підтверджуєте коректність контактних даних та способу доставки.</p></aside>
-</form></section>
+<section class="container page-shell">
+  <div class="breadcrumbs"><a href="/cart">Кошик</a><span>/</span><span>Оформлення</span></div>
+  <h1>Оформлення замовлення</h1>
+
+  {% if errors %}
+    <div class="form-error"><strong>Перевірте форму:</strong><ul>{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul></div>
+  {% endif %}
+
+  <form method="post" action="/checkout" class="checkout-layout" data-checkout-form>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    <div class="checkout-main">
+      <section class="panel">
+        <h2>1. Отримувач</h2>
+        <div class="form-grid-2">
+          <label>Ім’я та прізвище *<input name="customer_name" autocomplete="name" required value="{{ form_data.get('customer_name','') if form_data else (user.full_name or '') if user else '' }}"></label>
+          <label>Телефон *<input name="customer_phone" autocomplete="tel" required placeholder="+380..." value="{{ form_data.get('customer_phone','') if form_data else (user.phone or '') if user else '' }}"></label>
+        </div>
+        <label>Email<input type="email" name="customer_email" autocomplete="email" value="{{ form_data.get('customer_email','') if form_data else user.email if user else '' }}"></label>
+      </section>
+
+      <section class="panel">
+        <h2>2. Доставка</h2>
+        <div class="delivery-options">
+          <label class="radio-card"><input type="radio" name="delivery_service" value="nova_poshta" {% if not form_data or form_data.get('delivery_service','nova_poshta')=='nova_poshta' %}checked{% endif %}><span><strong>Нова пошта</strong><small>Відділення або поштомат</small></span></label>
+          <label class="radio-card"><input type="radio" name="delivery_service" value="ukrposhta" {% if form_data and form_data.get('delivery_service')=='ukrposhta' %}checked{% endif %}><span><strong>Укрпошта</strong><small>Відділення за індексом</small></span></label>
+          <label class="radio-card"><input type="radio" name="delivery_service" value="pickup" {% if form_data and form_data.get('delivery_service')=='pickup' %}checked{% endif %}><span><strong>Самовивіз</strong><small>Узгодимо час отримання</small></span></label>
+        </div>
+
+        <div class="delivery-fields" data-delivery-fields>
+          <label data-delivery-common>Населений пункт<input name="delivery_city" value="{{ form_data.get('delivery_city','') if form_data else '' }}" placeholder="Полтава"></label>
+          <label data-delivery-np>Відділення / поштомат Нової пошти<input name="delivery_branch" value="{{ form_data.get('delivery_branch','') if form_data else '' }}" placeholder="Відділення №... або поштомат №..."></label>
+          <label data-delivery-ukr>Поштовий індекс<input name="delivery_postal_code" value="{{ form_data.get('delivery_postal_code','') if form_data else '' }}" inputmode="numeric" placeholder="36000"></label>
+          <label data-delivery-ukr>Відділення Укрпошти<input name="delivery_address" value="{{ form_data.get('delivery_address','') if form_data else '' }}" placeholder="Адреса або № відділення"></label>
+        </div>
+
+        <div class="shipping-note">{{ settings.shipping_notice }}</div>
+      </section>
+
+      <section class="panel">
+        <h2>3. Оплата</h2>
+
+        {% if settings.online_payment_enabled and not online_payment_ready %}
+          <div class="form-error">Онлайн-оплата зараз недоступна. Адміністратору потрібно перевірити налаштування LiqPay на сервері.</div>
+        {% endif %}
+
+        {% if payment_options %}
+          <div class="payment-options">
+            {% for option in payment_options %}
+              <label class="radio-card">
+                <input
+                  type="radio"
+                  name="payment_method"
+                  value="{{ option.value }}"
+                  {% if
+                    (form_data and form_data.get('payment_method') == option.value)
+                    or
+                    (
+                      not form_data
+                      and (
+                        (online_payment_ready and option.value == 'online')
+                        or (not online_payment_ready and loop.first)
+                      )
+                    )
+                  %}checked{% endif %}
+                >
+                <span>
+                  <strong>
+                    {% if option.value == 'online' and online_provider == 'liqpay' %}
+                      Оплата онлайн — LiqPay
+                    {% elif option.value == 'online' and online_provider == 'monobank' %}
+                      Оплата онлайн — Monobank
+                    {% else %}
+                      {{ option.label }}
+                    {% endif %}
+                  </strong>
+
+                  {% if option.value == 'cod' %}
+                    <small>Доступно для замовлень від {{ settings.cod_min_total|money }} грн</small>
+                  {% elif option.value == 'online' %}
+                    {% if online_provider == 'liqpay' %}
+                      <small>Visa/Mastercard, Apple Pay, Google Pay, Privat24. Після підтвердження замовлення відкриється захищена сторінка LiqPay.</small>
+                    {% elif online_provider == 'monobank' %}
+                      <small>Резервна онлайн-оплата через Monobank.</small>
+                    {% else %}
+                      <small>Безпечна онлайн-оплата карткою.</small>
+                    {% endif %}
+                  {% else %}
+                    <small>Реквізити підтвердить менеджер.</small>
+                  {% endif %}
+                </span>
+              </label>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="form-error">Наразі немає доступного способу оплати. Перевірте налаштування магазину.</div>
+        {% endif %}
+
+        <label>Коментар до замовлення<textarea name="comment" rows="3" placeholder="За потреби додайте уточнення">{{ form_data.get('comment','') if form_data else '' }}</textarea></label>
+      </section>
+    </div>
+
+    <aside class="panel checkout-summary">
+      <h2>Ваше замовлення</h2>
+      {% for item in items %}
+        <div class="checkout-item"><span>{{ item.product.name }} × {{ item.qty }}</span><strong>{{ item.line_total|money }} грн</strong></div>
+      {% endfor %}
+      <div class="summary-row"><span>Доставка</span><span>за тарифами перевізника</span></div>
+      <div class="summary-total"><span>Разом</span><strong>{{ subtotal|money }} грн</strong></div>
+      <button class="primary-button large-button" type="submit" data-checkout-submit {% if not payment_options %}disabled{% endif %}>Підтвердити замовлення</button>
+      <p class="muted">Для онлайн-оплати спочатку відкриється LiqPay. Повідомлення про успішне замовлення буде показано після повернення з платіжної сторінки.</p>
+    </aside>
+  </form>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+  const form = document.querySelector('[data-checkout-form]');
+  const submitButton = form?.querySelector('[data-checkout-submit]');
+  if (!form || !submitButton) return;
+
+  const updateSubmitText = () => {
+    const selected = form.querySelector('input[name="payment_method"]:checked');
+    submitButton.textContent = selected?.value === 'online'
+      ? 'Перейти до оплати'
+      : 'Підтвердити замовлення';
+  };
+
+  form.querySelectorAll('input[name="payment_method"]').forEach((radio) => {
+    radio.addEventListener('change', updateSubmitText);
+  });
+
+  updateSubmitText();
+})();
+</script>
 {% endblock %}

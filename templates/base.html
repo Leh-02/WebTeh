@@ -7,6 +7,7 @@
   <title>{% block title %}TopBearing{% endblock %}</title>
   <meta name="description" content="TopBearing — підшипники, пасові ремені, сальники, змащення та промислові аксесуари.">
   <link rel="stylesheet" href="{{ url_for('static', path='css/app.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='css/fixes-20260828.css') }}">
 </head>
 <body>
   <header class="site-header">
@@ -17,7 +18,6 @@
       <a class="brand-logo" href="/" aria-label="TopBearing — головна">
         <span class="brand-mark">TB</span><span class="brand-name">TopBearing</span>
       </a>
-
       <nav class="desktop-nav desktop-only" aria-label="Основна навігація">
         <a href="/catalog">Каталог</a>
         <a href="/favorites">Обране <span class="nav-count" data-favorites-count>0</span></a>
@@ -25,16 +25,18 @@
         {% if current_user %}
           {% if current_user.role == 'admin' %}<a href="/admin">Адмін-панель</a>{% endif %}
           <a href="/account">Акаунт</a>
+          <form class="desktop-logout-form" action="/logout" method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="desktop-logout-button" type="submit">Вийти</button>
+          </form>
         {% else %}
           <a href="/login">Увійти</a>
         {% endif %}
       </nav>
-
       <a class="cart-link" href="/cart" aria-label="Кошик">
         <span class="cart-icon">▣</span><span class="desktop-only">Кошик</span><span class="nav-count">{{ cart_count }}</span>
       </a>
     </div>
-
     <div class="header-search container">
       <form action="/catalog" method="get" class="search-form" role="search">
         <input name="q" value="{{ request.query_params.get('q', '') if request.url.path == '/catalog' else '' }}" placeholder="Пошук за номером або розміром: 25-54-10" autocomplete="off" aria-label="Пошук товару">
@@ -86,7 +88,7 @@
     </div>
   {% endif %}
 
-  <main>{% block content %}{% endblock %}</main>
+  <main class="site-main">{% block content %}{% endblock %}</main>
 
   <footer class="site-footer">
     <div class="container footer-grid">

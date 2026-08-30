@@ -1,3 +1,4 @@
+{% set empty_values = ['', 'none', 'null', '-', '—'] %}
 <article class="product-card" data-product-card data-product-id="{{ product.id }}">
   <a class="product-card-image" href="/product/{{ product.slug }}">
     {% if product.primary_image %}<img src="{{ product.primary_image }}" alt="{{ product.name }}" loading="lazy">{% else %}<span class="image-placeholder">TB</span>{% endif %}
@@ -8,7 +9,9 @@
       <button class="favorite-btn" type="button" data-favorite-button data-product-id="{{ product.id }}" aria-label="Додати в обране">♡</button>
     </div>
     <a class="product-card-title" href="/product/{{ product.slug }}">{{ product.name }}</a>
-    {% if product.manufacturer_code %}<div class="product-code">Арт. {{ product.manufacturer_code }}</div>{% endif %}
+    {% if product.manufacturer_code is not none and (product.manufacturer_code|string|trim|lower) not in empty_values %}
+      <div class="product-code">Арт. {{ product.manufacturer_code }}</div>
+    {% endif %}
     <div class="availability availability-{{ product.storefront_availability }}">{{ availability_label(product) }}</div>
     <div class="product-card-bottom">
       <strong class="product-price">{{ product.price|money }} грн</strong>

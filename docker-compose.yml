@@ -23,6 +23,19 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-0}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@topbearing.local}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-ChangeMe123!}
+
+      # Payment providers.
+      # Values are read from the host .env by Docker Compose and passed into the container.
+      PAYMENT_PROVIDER_PRIMARY: ${PAYMENT_PROVIDER_PRIMARY:-liqpay}
+      PAYMENT_PROVIDER_SECONDARY: ${PAYMENT_PROVIDER_SECONDARY:-monobank}
+      LIQPAY_PUBLIC_KEY: ${LIQPAY_PUBLIC_KEY:-}
+      LIQPAY_PRIVATE_KEY: ${LIQPAY_PRIVATE_KEY:-}
+      MONOBANK_TOKEN: ${MONOBANK_TOKEN:-}
+
+      # Production domain, for example https://topbearing.ua
+      # Leave empty during ordinary local development.
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+
     volumes:
       - product_uploads:/app/static/uploads
     depends_on:
