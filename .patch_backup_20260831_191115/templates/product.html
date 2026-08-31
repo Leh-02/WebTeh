@@ -3,7 +3,7 @@
 {% block content %}
 {% set empty_values = ['', 'none', 'null', '-', '—'] %}
 <section class="container product-page">
-  <div class="breadcrumbs"><a href="/">Головна</a><span>/</span><a href="/catalog/{{ product.category.code }}">{{ product.category.name or 'Каталог' }}</a><span>/</span><span>{{ product.name }}</span></div>
+  <div class="breadcrumbs"><a href="/">Головна</a><span>/</span><a href="/catalog?category={{ product.category.code }}">{{ product.category.name or 'Каталог' }}</a><span>/</span><span>{{ product.name }}</span></div>
 
   <div class="product-main">
     <div class="product-gallery">

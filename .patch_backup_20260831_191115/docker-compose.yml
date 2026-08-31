@@ -1,0 +1,47 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: topbearing
+      POSTGRES_USER: topbearing
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-topbearing_dev_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U topbearing -d topbearing"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+psycopg://topbearing:${POSTGRES_PASSWORD:-topbearing_dev_password}@db:5432/topbearing
+      SESSION_SECRET: ${SESSION_SECRET:-change-this-before-production}
+      COOKIE_SECURE: ${COOKIE_SECURE:-0}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@topbearing.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-ChangeMe123!}
+
+      # Payment providers.
+      # Values are read from the host .env by Docker Compose and passed into the container.
+      PAYMENT_PROVIDER_PRIMARY: ${PAYMENT_PROVIDER_PRIMARY:-liqpay}
+      PAYMENT_PROVIDER_SECONDARY: ${PAYMENT_PROVIDER_SECONDARY:-monobank}
+      LIQPAY_PUBLIC_KEY: ${LIQPAY_PUBLIC_KEY:-}
+      LIQPAY_PRIVATE_KEY: ${LIQPAY_PRIVATE_KEY:-}
+      MONOBANK_TOKEN: ${MONOBANK_TOKEN:-}
+
+      # Production domain, for example https://topbearing.ua
+      # Leave empty during ordinary local development.
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+
+    volumes:
+      - product_uploads:/app/static/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  product_uploads:

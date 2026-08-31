@@ -1,62 +1,10 @@
-ren/* TopBearing UI fixes — 2026-08-28 */
-
-/* Keep page content visually separated from the footer.
-   page-shell already had 64px bottom padding, so we rebalance it to avoid
-   creating a double-large gap while also fixing catalog/filter pages. */
-.site-main {
-  min-height: 65vh;
-  padding-bottom: 48px;
-}
-
-.site-main .page-shell {
-  padding-bottom: 16px;
-}
-
-/* Desktop logout in the common header. */
-.desktop-logout-form {
-  margin: 0;
-  display: inline-flex;
-}
-
-.desktop-logout-button {
-  border: 0;
-  background: transparent;
-  padding: 10px 12px;
-  border-radius: 10px;
-  font-weight: 650;
-  color: #31455f;
-  cursor: pointer;
-}
-
-.desktop-logout-button:hover {
-  background: var(--surface-soft);
-  color: var(--blue);
-}
-
-/* Admin heading actions. */
-.page-heading-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.page-heading-actions form {
-  margin: 0;
-}
-
-/* Online payment state is deliberately not styled as a completed order. */
-.payment-pending-mark {
-  background: #fff7e8;
-  color: var(--amber);
-}
-
-@media (max-width: 680px) {
-  .site-main {
-    padding-bottom: 36px;
-  }
-
-  .site-main .page-shell {
-    padding-bottom: 10px;
-  }
-}
+/* TopBearing UI fixes - consolidated 2026-08-30 */
+.site-main { min-height: 65vh; padding-bottom: 48px; }
+.site-main .page-shell { padding-bottom: 16px; }
+.desktop-logout-form { margin: 0; display: inline-flex; }
+.desktop-logout-button { border:0; background:transparent; padding:10px 12px; border-radius:10px; font-weight:650; color:#31455f; cursor:pointer; }
+.desktop-logout-button:hover { background:var(--surface-soft); color:var(--blue); }
+.page-heading-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.page-heading-actions form { margin:0; }
+.payment-pending-mark { background:#fff7e8; color:var(--amber); }
+@media (max-width:680px) { .site-main { padding-bottom:36px; } .site-main .page-shell { padding-bottom:10px; } }

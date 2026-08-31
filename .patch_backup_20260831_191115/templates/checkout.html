@@ -31,13 +31,11 @@
         </div>
 
         <div class="delivery-fields" data-delivery-fields>
-          <label data-delivery-common>Населений пункт<input name="delivery_city" data-np-city list="np-city-list" value="{{ form_data.get('delivery_city','') if form_data else '' }}" placeholder="Полтава"></label>
-          <label data-delivery-np>Відділення / поштомат Нової пошти<input name="delivery_branch" data-np-warehouse list="np-warehouse-list" value="{{ form_data.get('delivery_branch','') if form_data else '' }}" placeholder="Відділення №... або поштомат №..."></label>
+          <label data-delivery-common>Населений пункт<input name="delivery_city" value="{{ form_data.get('delivery_city','') if form_data else '' }}" placeholder="Полтава"></label>
+          <label data-delivery-np>Відділення / поштомат Нової пошти<input name="delivery_branch" value="{{ form_data.get('delivery_branch','') if form_data else '' }}" placeholder="Відділення №... або поштомат №..."></label>
           <label data-delivery-ukr>Поштовий індекс<input name="delivery_postal_code" value="{{ form_data.get('delivery_postal_code','') if form_data else '' }}" inputmode="numeric" placeholder="36000"></label>
           <label data-delivery-ukr>Відділення Укрпошти<input name="delivery_address" value="{{ form_data.get('delivery_address','') if form_data else '' }}" placeholder="Адреса або № відділення"></label>
         </div>
-        <datalist id="np-city-list"></datalist>
-        <datalist id="np-warehouse-list"></datalist>
 
         <div class="shipping-note">{{ settings.shipping_notice }}</div>
       </section>
@@ -140,5 +138,4 @@
   updateSubmitText();
 })();
 </script>
-<script src="{{ url_for('static', path='js/nova-poshta-checkout.js') }}" defer></script>
 {% endblock %}

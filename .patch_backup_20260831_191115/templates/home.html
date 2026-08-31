@@ -14,7 +14,7 @@
 <section class="container section-block">
   <div class="section-heading"><div><span class="eyebrow">Каталог</span><h2>Категорії</h2></div><a href="/catalog">Усі товари →</a></div>
   <div class="category-grid">
-    {% for category in categories %}<a class="category-card" href="/catalog/{{ category.code }}"><span class="category-icon">{{ loop.index|string }}</span><strong>{{ category.name or category.code }}</strong><small>{{ category.description or '' }}</small></a>{% endfor %}
+    {% for category in categories %}<a class="category-card" href="/catalog?category={{ category.code }}"><span class="category-icon">{{ loop.index|string }}</span><strong>{{ category.name or category.code }}</strong><small>{{ category.description or '' }}</small></a>{% endfor %}
   </div>
 </section>
 

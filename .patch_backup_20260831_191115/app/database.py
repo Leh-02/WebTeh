@@ -5,19 +5,11 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
+# Load the project's .env before any module reads DATABASE_URL / secrets.
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
-APP_ENV = os.getenv("APP_ENV", "development").strip().lower()
-DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
-
-if not DATABASE_URL:
-    if APP_ENV == "production":
-        raise RuntimeError("DATABASE_URL is required when APP_ENV=production")
-    DATABASE_URL = "sqlite:///./topbearing.db"
-
-if APP_ENV == "production" and DATABASE_URL.startswith("sqlite"):
-    raise RuntimeError("SQLite is not supported for TopBearing production deployment")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./topbearing.db")
 
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 engine = create_engine(DATABASE_URL, future=True, pool_pre_ping=True, connect_args=connect_args)

@@ -11,18 +11,10 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 PASSWORD_RESET_MAX_AGE = int(os.getenv("PASSWORD_RESET_MAX_AGE", "3600"))
 PBKDF2_ROUNDS = int(os.getenv("PASSWORD_PBKDF2_ROUNDS", "310000"))
-_WEAK_SECRETS = {"", "dev-change-me-now", "change-this-before-production", "changeme", "secret"}
-
-
-def get_session_secret() -> str:
-    value = os.getenv("SESSION_SECRET", "").strip()
-    app_env = os.getenv("APP_ENV", "development").strip().lower()
-    if app_env == "production" and (len(value) < 32 or value.lower() in _WEAK_SECRETS):
-        raise RuntimeError("SESSION_SECRET must be a unique random value of at least 32 characters in production")
-    return value or "topbearing-development-only-secret-do-not-use-in-production"
 
 
 def _ab64_encode(data: bytes) -> str:
+    """Passlib-compatible adapted base64 ('.' replaces '+', padding omitted)."""
     return base64.b64encode(data).decode("ascii").rstrip("=").replace("+", ".")
 
 
@@ -33,6 +25,10 @@ def _ab64_decode(value: str) -> bytes:
 
 
 def hash_password(password: str) -> str:
+    """Create a PBKDF2-SHA256 hash in the same modular format used by passlib.
+
+    This keeps compatibility with the original TopBearing hashes without requiring passlib.
+    """
     if not isinstance(password, str) or not password:
         raise ValueError("Password must not be empty")
     salt = secrets.token_bytes(16)
@@ -53,13 +49,13 @@ def verify_password(password: str, password_hash: str) -> bool:
             expected = _ab64_decode(checksum)
             actual = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, rounds, dklen=len(expected))
             return hmac.compare_digest(actual, expected)
+
+        # Compatibility fallback for a common explicit stdlib format if an older local build used it.
         if password_hash.startswith("pbkdf2_sha256$"):
             _, rounds_text, salt_text, checksum = password_hash.split("$", 3)
             rounds = int(rounds_text)
             expected = base64.b64decode(checksum)
-            actual = hashlib.pbkdf2_hmac(
-                "sha256", password.encode("utf-8"), salt_text.encode("utf-8"), rounds, dklen=len(expected)
-            )
+            actual = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt_text.encode("utf-8"), rounds, dklen=len(expected))
             return hmac.compare_digest(actual, expected)
     except Exception:
         return False
@@ -67,7 +63,8 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 
 def _serializer() -> URLSafeTimedSerializer:
-    return URLSafeTimedSerializer(secret_key=get_session_secret(), salt="topbearing-password-reset-v1")
+    secret = os.getenv("SESSION_SECRET", "dev-change-me-now")
+    return URLSafeTimedSerializer(secret_key=secret, salt="topbearing-password-reset-v1")
 
 
 def _password_fingerprint(password_hash: str) -> str:
@@ -75,7 +72,8 @@ def _password_fingerprint(password_hash: str) -> str:
 
 
 def create_password_reset_token(user_id: int, password_hash: str) -> str:
-    return _serializer().dumps({"uid": int(user_id), "fp": _password_fingerprint(password_hash)})
+    payload = {"uid": int(user_id), "fp": _password_fingerprint(password_hash)}
+    return _serializer().dumps(payload)
 
 
 def decode_password_reset_token(token: str, current_password_hash: str | None = None) -> dict[str, Any] | None:

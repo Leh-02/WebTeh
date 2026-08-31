@@ -17,7 +17,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 from starlette.middleware.sessions import SessionMiddleware
 
-from .database import SessionLocal, get_db
+from .database import Base, SessionLocal, engine, get_db
 from .models import (
     AuditLog,
     BeltSpec,
@@ -29,17 +29,18 @@ from .models import (
     OrderItem,
     Product,
     ProductImage,
-    ProductSlugRedirect,
     SealSpec,
     StoreSettings,
     User,
 )
+from . import models_ext_20260826 as _models_ext_20260826  # noqa: F401
+from .schema_upgrade import ensure_schema_20260824
+from .schema_upgrade_20260826 import ensure_schema_20260826
 from .security import (
     create_password_reset_token,
     decode_password_reset_token,
     hash_password,
     verify_password,
-    get_session_secret,
 )
 from .services.catalog import build_catalog_statement, normalize_category_code
 from .services.email_service import send_password_reset_email
@@ -56,19 +57,6 @@ from .services.monobank import configured as monobank_configured
 from .services.monobank import create_invoice, invoice_status, parse_webhook, verify_webhook
 from .services.payment_policy import payment_options
 from .services.payment_providers import default_online_provider, online_payment_available
-from .services.slug_service import make_unique_product_slug, remember_slug_redirect
-from .services.stock_service import (
-    InsufficientStock,
-    mark_new_order_stock,
-    re_reserve_order_stock,
-    release_order_stock,
-    sync_stock_after_payment,
-    reserve_product,
-)
-from .services.image_service import save_product_image
-from .services.nova_poshta import configured as nova_poshta_configured, search_cities, search_warehouses
-from .seo import catalog_seo_context, default_seo_context, merchant_feed_xml, product_seo_context, robots_txt, sitemap_xml
-from .rate_limit import SimpleRateLimitMiddleware
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "static"
@@ -116,6 +104,9 @@ DELIVERY_LABELS = {
     "pickup": "Самовивіз",
 }
 
+ensure_schema_20260824(engine)
+ensure_schema_20260826(engine)
+Base.metadata.create_all(bind=engine)
 
 def _bootstrap_data() -> None:
     with SessionLocal() as db:
@@ -162,12 +153,11 @@ _bootstrap_data()
 app = FastAPI(title="TopBearing")
 app.add_middleware(
     SessionMiddleware,
-    secret_key=get_session_secret(),
+    secret_key=os.getenv("SESSION_SECRET", "dev-change-me-now"),
     same_site="lax",
     https_only=os.getenv("COOKIE_SECURE", "0") == "1",
     max_age=60 * 60 * 24 * 14,
 )
-app.add_middleware(SimpleRateLimitMiddleware)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 
@@ -179,15 +169,6 @@ async def security_headers(request: Request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
-    response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://www.google-analytics.com; "
-        "style-src 'self' 'unsafe-inline'; "
-        "img-src 'self' data: https:; "
-        "connect-src 'self' https://api.monobank.ua https://www.liqpay.ua https://api.novaposhta.ua https://www.google-analytics.com; "
-        "form-action 'self' https://www.liqpay.ua https://*.liqpay.ua; "
-        "frame-ancestors 'none'; object-src 'none'; base-uri 'self'"
-    )
     if os.getenv("COOKIE_SECURE", "0") == "1":
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
@@ -329,10 +310,9 @@ def cart_details(request: Request, db: Session):
 
 
 def base_context(request: Request, db: Session, **extra: Any) -> dict[str, Any]:
-    category_stmt = select(Category).where(Category.is_active.is_(True))
-    if not request.url.path.startswith("/admin"):
-        category_stmt = category_stmt.where(Category.products.any(Product.is_active.is_(True)))
-    categories = db.scalars(category_stmt.order_by(Category.sort_order, Category.id)).all()
+    categories = db.scalars(
+        select(Category).where(Category.is_active.is_(True)).order_by(Category.sort_order, Category.id)
+    ).all()
     ctx = {
         "request": request,
         "current_user": current_user(request, db),
@@ -345,9 +325,7 @@ def base_context(request: Request, db: Session, **extra: Any) -> dict[str, Any]:
         "liqpay_ready": liqpay_configured(),
         "online_payment_ready": online_payment_available(),
         "online_provider": default_online_provider(),
-        "nova_poshta_ready": nova_poshta_configured(),
     }
-    ctx.update(default_seo_context(request))
     ctx.update(extra)
     return ctx
 
@@ -471,15 +449,10 @@ def get_or_create_brand(
     return brand
 
 def audit(db: Session, user: User | None, action: str, entity_type: str | None = None, entity_id: Any = None, details: str | None = None):
-    db.add(
-        AuditLog(
-            user_id=user.id if user else None,
-            action=action[:120],
-            entity_type=entity_type or None,
-            entity_id=str(entity_id)[:80] if entity_id is not None else None,
-            details=details or None,
-        )
-    )
+    # Audit schemas differed between early MVP snapshots. Do not let a non-essential legacy
+    # audit table break product/order writes during this compatibility update.
+    # Re-enable structured audit logging after the production DB is migrated with Alembic.
+    return None
 
 
 def order_number() -> str:
@@ -613,36 +586,6 @@ def _start_online_payment(order: Order, request: Request, db: Session):
     raise RuntimeError("No online payment provider is configured")
 
 
-@app.get("/healthz")
-def healthz():
-    return JSONResponse({"ok": True})
-
-
-@app.get("/robots.txt", include_in_schema=False)
-def robots(request: Request):
-    return HTMLResponse(robots_txt(request), media_type="text/plain; charset=utf-8")
-
-
-@app.get("/sitemap.xml", include_in_schema=False)
-def sitemap(request: Request, db: Session = Depends(get_db)):
-    return HTMLResponse(sitemap_xml(request, db), media_type="application/xml; charset=utf-8")
-
-
-@app.get("/merchant-feed.xml", include_in_schema=False)
-def merchant_feed(request: Request, db: Session = Depends(get_db)):
-    return HTMLResponse(merchant_feed_xml(request, db), media_type="application/xml; charset=utf-8")
-
-
-@app.get("/api/nova-poshta/cities")
-async def nova_poshta_cities(q: str = ""):
-    return JSONResponse(await search_cities(q) if nova_poshta_configured() else [])
-
-
-@app.get("/api/nova-poshta/warehouses")
-async def nova_poshta_warehouses(city_ref: str = "", q: str = ""):
-    return JSONResponse(await search_warehouses(city_ref, q) if nova_poshta_configured() else [])
-
-
 # --------------------------- Storefront ---------------------------
 
 
@@ -658,13 +601,15 @@ def home(request: Request, db: Session = Depends(get_db)):
     return render(request, db, "home.html", featured=featured)
 
 
-def _catalog_response(request: Request, db: Session, *, category_code_override: str | None = None):
+@app.get("/catalog", response_class=HTMLResponse)
+def catalog(request: Request, db: Session = Depends(get_db)):
     params = request.query_params
-    category_code = category_code_override or params.get("category")
+    category_code = params.get("category")
     brand_id = as_int(params.get("brand"))
     sort = params.get("sort", "relevance")
     page = max(1, as_int(params.get("page"), 1) or 1)
     page_size = 24
+
     stmt = build_catalog_statement(
         q=params.get("q"),
         category_code=category_code,
@@ -681,18 +626,32 @@ def _catalog_response(request: Request, db: Session, *, category_code_override: 
         length_min=params.get("length_min"),
         length_max=params.get("length_max"),
     )
-    total = db.scalar(select(func.count()).select_from(stmt.order_by(None).subquery())) or 0
-    products = db.scalars(stmt.offset((page - 1) * page_size).limit(page_size)).all()
+    all_products = db.scalars(stmt).all()
+    alias_query = (params.get("q") or "").strip()
+    if alias_query:
+        alias_stmt = build_catalog_statement(
+            q=None,
+            category_code=category_code,
+            brand_id=brand_id,
+            sort=sort,
+            subtype=params.get("subtype"),
+            profile=params.get("profile"),
+            material=params.get("material"),
+            viscosity=params.get("viscosity"),
+            inner_min=params.get("inner_min"),
+            inner_max=params.get("inner_max"),
+            outer_min=params.get("outer_min"),
+            outer_max=params.get("outer_max"),
+            length_min=params.get("length_min"),
+            length_max=params.get("length_max"),
+        ).where(Product.alternative_markings.ilike(f"%{alias_query}%"))
+        alias_products = db.scalars(alias_stmt).all()
+        existing_ids = {item.id for item in all_products}
+        all_products.extend(item for item in alias_products if item.id not in existing_ids)
+    total = len(all_products)
+    products = all_products[(page - 1) * page_size : page * page_size]
     brands = db.scalars(select(Brand).order_by(Brand.name)).all()
     pages = max(1, (total + page_size - 1) // page_size)
-
-    canonical_code = category_kind(category_code) if category_code else None
-    category_obj = db.scalar(select(Category).where(Category.code == canonical_code)) if canonical_code else None
-    filter_keys = {
-        "q", "brand", "sort", "subtype", "profile", "material", "viscosity",
-        "inner_min", "inner_max", "outer_min", "outer_max", "length_min", "length_max", "page",
-    }
-    seo = catalog_seo_context(request, category_obj, has_filters=any(params.get(key) for key in filter_keys))
     return render(
         request,
         db,
@@ -700,29 +659,11 @@ def _catalog_response(request: Request, db: Session, *, category_code_override: 
         products=products,
         total=total,
         brands=brands,
-        active_category=canonical_code,
+        active_category=category_kind(category_code),
         params=dict(params),
         page=page,
         pages=pages,
-        **seo,
     )
-
-
-@app.get("/catalog", response_class=HTMLResponse)
-def catalog(request: Request, db: Session = Depends(get_db)):
-    category = request.query_params.get("category")
-    if category and len(request.query_params) == 1:
-        return RedirectResponse(f"/catalog/{category_kind(category)}", status_code=301)
-    return _catalog_response(request, db)
-
-
-@app.get("/catalog/{category_code}", response_class=HTMLResponse)
-def catalog_category(category_code: str, request: Request, db: Session = Depends(get_db)):
-    canonical = category_kind(category_code)
-    category = db.scalar(select(Category).where(Category.code == canonical, Category.is_active.is_(True)))
-    if not category:
-        raise HTTPException(status_code=404)
-    return _catalog_response(request, db, category_code_override=canonical)
 
 
 @app.get("/product/{slug}", response_class=HTMLResponse)
@@ -741,13 +682,6 @@ def product_page(slug: str, request: Request, db: Session = Depends(get_db)):
         )
     )
     if not product:
-        redirect = db.scalar(
-            select(ProductSlugRedirect)
-            .where(ProductSlugRedirect.old_slug == slug)
-            .options(selectinload(ProductSlugRedirect.product))
-        )
-        if redirect and redirect.product and redirect.product.is_active:
-            return RedirectResponse(f"/product/{redirect.product.slug}", status_code=301)
         raise HTTPException(status_code=404)
     related = db.scalars(
         select(Product)
@@ -755,7 +689,7 @@ def product_page(slug: str, request: Request, db: Session = Depends(get_db)):
         .limit(4)
         .options(selectinload(Product.images), selectinload(Product.brand), selectinload(Product.category))
     ).all()
-    return render(request, db, "product.html", product=product, related=related, **product_seo_context(request, product))
+    return render(request, db, "product.html", product=product, related=related)
 
 
 @app.post("/cart/add/{product_id}")
@@ -1023,7 +957,7 @@ def checkout_page(request: Request, db: Session = Depends(get_db)):
         flash(request, "Кошик порожній.", "info")
         return RedirectResponse("/cart", status_code=303)
     settings = _settings(db)
-    options = payment_options(subtotal, settings, monobank_ready=online_payment_available(), products=[item["product"] for item in items])
+    options = payment_options(subtotal, settings, monobank_ready=online_payment_available())
     user = current_user(request, db)
     return render(request, db, "checkout.html", items=items, subtotal=subtotal, payment_options=options, user=user)
 
@@ -1064,7 +998,7 @@ async def checkout_submit(request: Request, db: Session = Depends(get_db)):
         errors.append("Вкажіть індекс або відділення Укрпошти.")
 
     settings = _settings(db)
-    options = payment_options(subtotal, settings, monobank_ready=online_payment_available(), products=[item["product"] for item in items])
+    options = payment_options(subtotal, settings, monobank_ready=online_payment_available())
     allowed_methods = {o["value"] for o in options}
     if payment_method not in allowed_methods:
         errors.append("Оберіть доступний спосіб оплати.")
@@ -1111,26 +1045,26 @@ async def checkout_submit(request: Request, db: Session = Depends(get_db)):
     db.add(order)
     db.flush()
 
-    mark_new_order_stock(order)
-    try:
-        for item in items:
-            qty = item["qty"]
-            product = reserve_product(db, item["product"].id, qty)
-            db.add(
-                OrderItem(
-                    order_id=order.id,
-                    product_id=product.id,
-                    sku_snapshot=product.sku,
-                    name_snapshot=product.name,
-                    qty=qty,
-                    unit_price=product.price,
-                    line_total=Decimal(product.price) * qty,
-                )
+    for item in items:
+        product = db.get(Product, item["product"].id)
+        qty = item["qty"]
+        if product.stock_is_tracked:
+            if qty > product.stock_qty:
+                db.rollback()
+                flash(request, f"Залишок {product.name} щойно змінився. Перевірте кошик.", "error")
+                return RedirectResponse("/cart", status_code=303)
+            product.stock_qty -= qty
+        db.add(
+            OrderItem(
+                order_id=order.id,
+                product_id=product.id,
+                sku_snapshot=product.sku,
+                name_snapshot=product.name,
+                qty=qty,
+                unit_price=product.price,
+                line_total=Decimal(product.price) * qty,
             )
-    except InsufficientStock as exc:
-        db.rollback()
-        flash(request, str(exc) or "Залишок товару щойно змінився. Перевірте кошик.", "error")
-        return RedirectResponse("/cart", status_code=303)
+        )
 
     audit(db, user, "order_create", "order", order.id, order.number)
     db.commit()
@@ -1143,10 +1077,8 @@ async def checkout_submit(request: Request, db: Session = Depends(get_db)):
             return _start_online_payment(order, request, db)
         except Exception:
             order.payment_status = "failed"
-            order = db.scalar(select(Order).where(Order.id == order.id).options(selectinload(Order.items)))
-            sync_stock_after_payment(db, order)
             db.commit()
-            flash(request, "Замовлення створено, але платіжну сторінку не вдалося відкрити. Резерв товару звільнено; оплату можна повторити.", "error")
+            flash(request, "Замовлення створено, але платіжну сторінку не вдалося відкрити. Можна повторити оплату зі сторінки замовлення.", "error")
 
     return RedirectResponse(f"/order/{order.number}/success", status_code=303)
 
@@ -1162,19 +1094,12 @@ async def retry_payment(number: str, request: Request, db: Session = Depends(get
         raise HTTPException(status_code=403)
     if order.payment_method != "online" or order.payment_status == "paid":
         return RedirectResponse(f"/order/{number}/success", status_code=303)
-    if not re_reserve_order_stock(db, order):
-        db.rollback()
-        flash(request, "Не вдалося повторно зарезервувати товар: залишок уже змінився.", "error")
-        return RedirectResponse(f"/order/{number}/success", status_code=303)
-    order.payment_status = "pending"
-    db.commit()
     try:
         return _start_online_payment(order, request, db)
     except Exception:
         order.payment_status = "failed"
-        sync_stock_after_payment(db, order)
         db.commit()
-        flash(request, "Не вдалося відкрити онлайн-оплату. Резерв звільнено; перевірте налаштування LiqPay/ПриватБанк або резервного Monobank acquiring.", "error")
+        flash(request, "Не вдалося відкрити онлайн-оплату. Перевірте налаштування LiqPay/ПриватБанк або резервного Monobank acquiring.", "error")
         return RedirectResponse(f"/order/{number}/success", status_code=303)
 
 
@@ -1195,9 +1120,8 @@ def liqpay_payment_start(number: str, request: Request, db: Session = Depends(ge
             except Exception:
                 pass
         order.payment_status = "failed"
-        sync_stock_after_payment(db, order)
         db.commit()
-        flash(request, "LiqPay не налаштовано, а резервний Monobank недоступний. Резерв товару звільнено.", "error")
+        flash(request, "LiqPay не налаштовано, а резервний Monobank недоступний.", "error")
         return RedirectResponse(f"/order/{number}/success", status_code=303)
 
     base = _public_base_url(request)
@@ -1223,9 +1147,8 @@ def liqpay_payment_start(number: str, request: Request, db: Session = Depends(ge
             except Exception:
                 pass
         order.payment_status = "failed"
-        sync_stock_after_payment(db, order)
         db.commit()
-        flash(request, "Не вдалося відкрити LiqPay, а резервна оплата Monobank також недоступна. Резерв товару звільнено.", "error")
+        flash(request, "Не вдалося відкрити LiqPay, а резервна оплата Monobank також недоступна.", "error")
         return RedirectResponse(f"/order/{number}/success", status_code=303)
 
 
@@ -1248,8 +1171,6 @@ def payment_return(request: Request, db: Session = Depends(get_db)):
                 require_amount=str(data.get("status", "")).lower() in {"success", "reversed"},
             )
             apply_liqpay_payment_event(order, data)
-            order = db.scalar(select(Order).where(Order.id == order.id).options(selectinload(Order.items)))
-            sync_stock_after_payment(db, order)
             db.commit()
         except Exception:
             pass
@@ -1257,8 +1178,6 @@ def payment_return(request: Request, db: Session = Depends(get_db)):
         try:
             data = invoice_status(order.mono_invoice_id)
             apply_payment_event(order, data)
-            order = db.scalar(select(Order).where(Order.id == order.id).options(selectinload(Order.items)))
-            sync_stock_after_payment(db, order)
             db.commit()
         except Exception:
             pass
@@ -1293,8 +1212,6 @@ async def liqpay_webhook(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="LiqPay payment data mismatch")
 
     apply_liqpay_payment_event(order, data)
-    order = db.scalar(select(Order).where(Order.id == order.id).options(selectinload(Order.items)))
-    sync_stock_after_payment(db, order)
     db.commit()
     return JSONResponse({"ok": True})
 
@@ -1312,8 +1229,6 @@ async def monobank_webhook(request: Request, db: Session = Depends(get_db)):
         order = db.scalar(select(Order).where(Order.number == data["reference"]))
     if order:
         apply_payment_event(order, data)
-        order = db.scalar(select(Order).where(Order.id == order.id).options(selectinload(Order.items)))
-        sync_stock_after_payment(db, order)
         db.commit()
     return JSONResponse({"ok": True})
 
@@ -1464,7 +1379,9 @@ def save_upload(upload: UploadFile) -> str | None:
     content = upload.file.read(MAX_IMAGE_BYTES + 1)
     if len(content) > MAX_IMAGE_BYTES:
         raise ValueError("Одне фото не може бути більшим за 5 МБ.")
-    return save_product_image(content, UPLOAD_DIR)
+    filename = f"{secrets.token_hex(16)}{suffix}"
+    (UPLOAD_DIR / filename).write_bytes(content)
+    return f"/static/uploads/{filename}"
 
 
 @app.post("/admin/products/save")
@@ -1538,32 +1455,7 @@ async def admin_product_save(request: Request, db: Session = Depends(get_db)):
     product.stock_qty = max(0, as_int(str(form.get("stock_qty", "0")), 0) or 0)
     product.availability_status = str(form.get("availability_status", "in_stock")) if not product.stock_is_tracked else ("in_stock" if product.stock_qty > 0 else "out_of_stock")
     product.is_active = form.get("is_active") == "1"
-    prepayment_override = str(form.get("require_prepayment_override", "")).strip()
-    cod_override = str(form.get("cod_allowed_override", "")).strip()
-    product.require_prepayment_override = True if prepayment_override == "1" else (False if prepayment_override == "0" else None)
-    product.cod_allowed_override = True if cod_override == "1" else (False if cod_override == "0" else None)
-
-    requested_slug = str(form.get("seo_slug", "")).strip()
-    if is_new:
-        product.slug = make_unique_product_slug(
-            db,
-            product.name,
-            brand.name,
-            product.manufacturer_code,
-            product_id=product.id,
-            requested_slug=requested_slug or None,
-        )
-    elif requested_slug and requested_slug != product.slug:
-        old_slug = product.slug
-        product.slug = make_unique_product_slug(
-            db,
-            product.name,
-            brand.name,
-            product.manufacturer_code,
-            product_id=product.id,
-            requested_slug=requested_slug,
-        )
-        remember_slug_redirect(db, product, old_slug)
+    product.slug = make_unique_slug(db, f"{product.name} {brand.name} {product.manufacturer_code or product.sku}", product.id)
     set_product_spec(db, product, category, form)
 
     for image in list(product.images):
@@ -1632,11 +1524,30 @@ def admin_order_detail(order_id: int, request: Request, db: Session = Depends(ge
 
 
 def _restore_order_stock(order: Order, db: Session) -> None:
-    release_order_stock(db, order)
+    if order.stock_restored:
+        return
+    for item in order.items:
+        product = db.get(Product, item.product_id) if item.product_id else None
+        if product and product.stock_is_tracked:
+            product.stock_qty += item.qty
+            product.availability_status = "in_stock" if product.stock_qty > 0 else "out_of_stock"
+    order.stock_restored = True
 
 
 def _reserve_order_stock_again(order: Order, db: Session) -> bool:
-    return re_reserve_order_stock(db, order)
+    if not order.stock_restored:
+        return True
+    products = []
+    for item in order.items:
+        product = db.get(Product, item.product_id) if item.product_id else None
+        if product and product.stock_is_tracked:
+            if product.stock_qty < item.qty:
+                return False
+            products.append((product, item.qty))
+    for product, qty in products:
+        product.stock_qty -= qty
+    order.stock_restored = False
+    return True
 
 
 @app.post("/admin/orders/{order_id}/update")

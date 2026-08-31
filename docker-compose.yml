@@ -1,10 +1,11 @@
 services:
   db:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_DB: topbearing
       POSTGRES_USER: topbearing
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-topbearing_dev_password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -15,29 +16,55 @@ services:
 
   web:
     build: .
+    restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql+psycopg://topbearing:${POSTGRES_PASSWORD:-topbearing_dev_password}@db:5432/topbearing
-      SESSION_SECRET: ${SESSION_SECRET:-change-this-before-production}
-      COOKIE_SECURE: ${COOKIE_SECURE:-0}
-      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@topbearing.local}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-ChangeMe123!}
-
-      # Payment providers.
-      # Values are read from the host .env by Docker Compose and passed into the container.
+      APP_ENV: ${APP_ENV:-production}
+      DATABASE_URL: postgresql+psycopg://topbearing:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/topbearing
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
+      COOKIE_SECURE: ${COOKIE_SECURE:-1}
+      TRUST_PROXY: ${TRUST_PROXY:-1}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+      STOCK_RESERVATION_MINUTES: ${STOCK_RESERVATION_MINUTES:-30}
+      STOCK_CLEANUP_INTERVAL_SECONDS: ${STOCK_CLEANUP_INTERVAL_SECONDS:-60}
+      RUN_SEED: ${RUN_SEED:-0}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       PAYMENT_PROVIDER_PRIMARY: ${PAYMENT_PROVIDER_PRIMARY:-liqpay}
       PAYMENT_PROVIDER_SECONDARY: ${PAYMENT_PROVIDER_SECONDARY:-monobank}
       LIQPAY_PUBLIC_KEY: ${LIQPAY_PUBLIC_KEY:-}
       LIQPAY_PRIVATE_KEY: ${LIQPAY_PRIVATE_KEY:-}
       MONOBANK_TOKEN: ${MONOBANK_TOKEN:-}
-
-      # Production domain, for example https://topbearing.ua
-      # Leave empty during ordinary local development.
-      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
-
+      NOVA_POSHTA_API_KEY: ${NOVA_POSHTA_API_KEY:-}
+      GOOGLE_SITE_VERIFICATION: ${GOOGLE_SITE_VERIFICATION:-}
+      GA4_MEASUREMENT_ID: ${GA4_MEASUREMENT_ID:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-1}
     volumes:
       - product_uploads:/app/static/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  reservation-cleaner:
+    build: .
+    restart: unless-stopped
+    command: ["sh", "-c", "alembic upgrade head && python scripts/stock_reservation_worker.py"]
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      DATABASE_URL: postgresql+psycopg://topbearing:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/topbearing
+      STOCK_RESERVATION_MINUTES: ${STOCK_RESERVATION_MINUTES:-30}
+      STOCK_CLEANUP_INTERVAL_SECONDS: ${STOCK_CLEANUP_INTERVAL_SECONDS:-60}
     depends_on:
       db:
         condition: service_healthy

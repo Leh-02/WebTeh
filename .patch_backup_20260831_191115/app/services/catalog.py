@@ -144,7 +144,6 @@ def build_catalog_statement(
                     func.lower(Product.name).like(pattern),
                     func.lower(Product.sku).like(pattern),
                     func.lower(func.coalesce(Product.manufacturer_code, "")).like(pattern),
-                    func.lower(func.coalesce(Product.alternative_markings, "")).like(pattern),
                     Product.brand.has(func.lower(Brand.name).like(pattern)),
                 )
             )
