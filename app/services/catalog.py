@@ -150,16 +150,16 @@ def build_catalog_statement(
             )
 
     # Technical filters. Relationship .has() keeps the query simple and index-friendly enough for MVP scale.
-    if subtype:
+    if subtype and canonical_category in {None, "bearings"}:
         spec = Product.bearing_spec.property.mapper.class_
         stmt = stmt.where(Product.bearing_spec.has(func.lower(func.coalesce(spec.subtype, "")) == subtype.lower()))
-    if profile:
+    if profile and canonical_category in {None, "belts"}:
         spec = Product.belt_spec.property.mapper.class_
         stmt = stmt.where(Product.belt_spec.has(func.lower(func.coalesce(spec.profile, "")) == profile.lower()))
-    if material:
+    if material and canonical_category in {None, "seals"}:
         spec = Product.seal_spec.property.mapper.class_
         stmt = stmt.where(Product.seal_spec.has(func.lower(func.coalesce(spec.material, "")) == material.lower()))
-    if viscosity:
+    if viscosity and canonical_category in {None, "lubricants"}:
         spec = Product.lubricant_spec.property.mapper.class_
         stmt = stmt.where(Product.lubricant_spec.has(func.lower(func.coalesce(spec.viscosity, "")) == viscosity.lower()))
 
@@ -167,7 +167,7 @@ def build_catalog_statement(
     outer_min_d, outer_max_d = _decimal(outer_min), _decimal(outer_max)
     length_min_d, length_max_d = _decimal(length_min), _decimal(length_max)
 
-    if inner_min_d is not None or inner_max_d is not None:
+    if (inner_min_d is not None or inner_max_d is not None) and canonical_category in {None, "bearings", "seals"}:
         conditions = []
         for rel in (Product.bearing_spec, Product.seal_spec):
             spec = rel.property.mapper.class_
@@ -179,7 +179,7 @@ def build_catalog_statement(
             conditions.append(rel.has(and_(*parts)))
         stmt = stmt.where(or_(*conditions))
 
-    if outer_min_d is not None or outer_max_d is not None:
+    if (outer_min_d is not None or outer_max_d is not None) and canonical_category in {None, "bearings", "seals"}:
         conditions = []
         for rel in (Product.bearing_spec, Product.seal_spec):
             spec = rel.property.mapper.class_
@@ -191,7 +191,7 @@ def build_catalog_statement(
             conditions.append(rel.has(and_(*parts)))
         stmt = stmt.where(or_(*conditions))
 
-    if length_min_d is not None or length_max_d is not None:
+    if (length_min_d is not None or length_max_d is not None) and canonical_category in {None, "belts"}:
         spec = Product.belt_spec.property.mapper.class_
         parts = []
         if length_min_d is not None:

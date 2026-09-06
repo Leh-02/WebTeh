@@ -40,16 +40,47 @@
   });
 
   const filterForm = document.querySelector("[data-filter-form]");
-  function syncCatalogGroups() {
+  let filterTimer = null;
+
+  function syncCatalogGroups({ clearHidden = false } = {}) {
     if (!filterForm) return;
     const select = filterForm.querySelector("[data-category-filter]");
     const kind = select?.selectedOptions?.[0]?.dataset?.kind || "";
     filterForm.querySelectorAll("[data-filter-group]").forEach(group => {
-      group.classList.toggle("hidden", !kind || group.dataset.filterGroup !== kind);
+      const active = Boolean(kind) && group.dataset.filterGroup === kind;
+      group.classList.toggle("hidden", !active);
+      if (clearHidden && !active) {
+        group.querySelectorAll("input, select").forEach(control => {
+          if (control instanceof HTMLInputElement || control instanceof HTMLSelectElement) control.value = "";
+        });
+      }
     });
   }
-  filterForm?.querySelector("[data-category-filter]")?.addEventListener("change", syncCatalogGroups);
+
+  function submitFilters(delay = 0) {
+    if (!filterForm) return;
+    window.clearTimeout(filterTimer);
+    filterTimer = window.setTimeout(() => {
+      const pageField = filterForm.querySelector('input[name="page"]');
+      if (pageField) pageField.remove();
+      filterForm.requestSubmit();
+    }, delay);
+  }
+
+  const categoryFilter = filterForm?.querySelector("[data-category-filter]");
+  categoryFilter?.addEventListener("change", () => {
+    syncCatalogGroups({ clearHidden: true });
+    submitFilters(0);
+  });
   syncCatalogGroups();
+
+  filterForm?.querySelectorAll("select:not([data-category-filter])").forEach(select => {
+    select.addEventListener("change", () => submitFilters(0));
+  });
+  filterForm?.querySelectorAll('input:not([type="hidden"])').forEach(input => {
+    input.addEventListener("input", () => submitFilters(450));
+    input.addEventListener("change", () => submitFilters(0));
+  });
 
   document.querySelectorAll("[data-sort-select]").forEach(select => {
     select.addEventListener("change", () => {
@@ -59,6 +90,114 @@
       window.location.assign(url.toString());
     });
   });
+
+  // ---------------- Cart: instant totals + debounced persistence ----------------
+  const cartPage = document.querySelector("[data-cart-page]");
+  if (cartPage) {
+    const csrf = cartPage.dataset.csrfToken || "";
+    const saveStatus = cartPage.querySelector("[data-cart-save-status]");
+    const timers = new Map();
+    const requests = new Map();
+
+    const moneyText = value => `${new Intl.NumberFormat("uk-UA", { maximumFractionDigits: 0 }).format(Number(value || 0))} грн`;
+
+    function clampQty(value) {
+      const parsed = Number.parseInt(String(value), 10);
+      if (!Number.isFinite(parsed)) return 1;
+      return Math.max(1, Math.min(999, parsed));
+    }
+
+    function recalcCart() {
+      let subtotal = 0;
+      cartPage.querySelectorAll("[data-cart-item]").forEach(item => {
+        const input = item.querySelector("[data-cart-qty]");
+        const qty = clampQty(input?.value || 1);
+        if (input) input.value = String(qty);
+        const unitPrice = Number(item.dataset.unitPrice || 0);
+        const lineTotal = unitPrice * qty;
+        subtotal += lineTotal;
+        const line = item.querySelector("[data-line-total]");
+        if (line) line.textContent = moneyText(lineTotal);
+      });
+      cartPage.querySelectorAll("[data-cart-subtotal], [data-cart-total]").forEach(el => { el.textContent = moneyText(subtotal); });
+      return subtotal;
+    }
+
+    async function persistItem(item) {
+      const productId = item.dataset.productId;
+      const input = item.querySelector("[data-cart-qty]");
+      if (!productId || !input) return;
+      const qty = clampQty(input.value);
+      input.value = String(qty);
+      const body = new FormData();
+      body.set("csrf_token", csrf);
+      body.set("qty", String(qty));
+      if (saveStatus) saveStatus.textContent = "Зберігаємо зміни…";
+      const previousRequest = requests.get(productId);
+      previousRequest?.abort();
+      const controller = new AbortController();
+      requests.set(productId, controller);
+      try {
+        const response = await fetch(`/cart/item/${encodeURIComponent(productId)}`, {
+          method: "POST",
+          body,
+          headers: { Accept: "application/json" },
+          credentials: "same-origin",
+          signal: controller.signal
+        });
+        if (!response.ok) throw new Error("cart update failed");
+        const data = await response.json();
+        input.value = String(data.qty);
+        const line = item.querySelector("[data-line-total]");
+        if (line) line.textContent = moneyText(data.line_total);
+        cartPage.querySelectorAll("[data-cart-subtotal], [data-cart-total]").forEach(el => { el.textContent = moneyText(data.subtotal); });
+        document.querySelectorAll("[data-cart-count]").forEach(el => { el.textContent = String(data.cart_count); });
+        if (saveStatus) saveStatus.textContent = "Кошик оновлено.";
+      } catch (error) {
+        if (error?.name === "AbortError") return;
+        if (saveStatus) saveStatus.textContent = "Не вдалося зберегти кількість. Оновіть сторінку та спробуйте ще раз.";
+      } finally {
+        if (requests.get(productId) === controller) requests.delete(productId);
+      }
+    }
+
+    function schedulePersist(item, delay = 350) {
+      const productId = item.dataset.productId;
+      if (!productId) return;
+      window.clearTimeout(timers.get(productId));
+      timers.set(productId, window.setTimeout(() => persistItem(item), delay));
+    }
+
+    cartPage.querySelectorAll("[data-cart-item]").forEach(item => {
+      const input = item.querySelector("[data-cart-qty]");
+      item.querySelector("[data-qty-minus]")?.addEventListener("click", () => {
+        if (!input) return;
+        input.value = String(Math.max(1, clampQty(input.value) - 1));
+        recalcCart();
+        schedulePersist(item, 0);
+      });
+      item.querySelector("[data-qty-plus]")?.addEventListener("click", () => {
+        if (!input) return;
+        input.value = String(Math.min(999, clampQty(input.value) + 1));
+        recalcCart();
+        schedulePersist(item, 0);
+      });
+      input?.addEventListener("input", () => {
+        recalcCart();
+        schedulePersist(item, 450);
+      });
+      input?.addEventListener("change", () => {
+        recalcCart();
+        schedulePersist(item, 0);
+      });
+      item.querySelector("[data-cart-qty-form]")?.addEventListener("submit", event => {
+        event.preventDefault();
+        recalcCart();
+        schedulePersist(item, 0);
+      });
+    });
+    recalcCart();
+  }
 
   // ---------------- Admin product form ----------------
   const productForm = document.querySelector("[data-product-admin-form]");
@@ -232,7 +371,7 @@
               <button class="favorite-btn active" type="button" data-favorite-button data-product-id="${Number(product.id)}" aria-label="Прибрати з обраного">♥</button>
             </div>
             <a class="product-card-title" href="${escapeHtml(product.url)}">${escapeHtml(product.name)}</a>
-            ${product.manufacturer_code ? `<div class="product-code">Арт. ${escapeHtml(product.manufacturer_code)}</div>` : ""}
+            ${product.manufacturer_code ? `<div class="product-code">Маркування: ${escapeHtml(product.manufacturer_code)}</div>` : ""}
             <div class="availability availability-${escapeHtml(product.availability_code)}">${escapeHtml(product.availability)}</div>
             <div class="product-card-bottom"><strong class="product-price">${formatMoney(product.price)} грн</strong><a class="small-primary" href="${escapeHtml(product.url)}">Переглянути</a></div>
           </div>

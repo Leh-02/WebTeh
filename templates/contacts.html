@@ -1,3 +1,23 @@
 {% extends 'base.html' %}
 {% block title %}Контакти та доставка — TopBearing{% endblock %}
-{% block content %}<section class="container page-shell"><div class="page-heading"><div><span class="eyebrow">TopBearing</span><h1>Контакти та доставка</h1></div></div><div class="contact-grid"><section class="panel"><h2>Контакти</h2><dl class="detail-list">{% if settings.contact_phone %}<div><dt>Телефон</dt><dd><a href="tel:{{ settings.contact_phone|replace(' ', '') }}">{{ settings.contact_phone }}</a></dd></div>{% endif %}{% if settings.contact_email %}<div><dt>Email</dt><dd><a href="mailto:{{ settings.contact_email }}">{{ settings.contact_email }}</a></dd></div>{% endif %}{% if settings.contact_telegram %}<div><dt>Telegram</dt><dd>{{ settings.contact_telegram }}</dd></div>{% endif %}{% if settings.contact_address %}<div><dt>Адреса</dt><dd>{{ settings.contact_address }}</dd></div>{% endif %}</dl></section><section class="panel"><h2>Доставка</h2><ul class="clean-list"><li>Нова пошта — відділення або поштомат</li><li>Укрпошта — відділення за індексом</li><li>Самовивіз — за попереднім узгодженням</li></ul><div class="shipping-note">{{ settings.shipping_notice }}</div></section><section class="panel"><h2>Оплата</h2><ul class="clean-list">{% if settings.online_payment_enabled %}<li>Онлайн-оплата карткою</li>{% endif %}{% if settings.bank_transfer_enabled %}<li>Оплата за рахунком / безготівково</li>{% endif %}{% if settings.cod_enabled %}<li>Післяплата для замовлень від {{ settings.cod_min_total|money }} грн</li>{% endif %}</ul></section></div></section>{% endblock %}
+{% block content %}
+{% set tg_url = telegram_href(settings.contact_telegram) %}
+{% set vb_url = viber_href(settings.contact_viber) %}
+<section class="container page-shell">
+  <div class="page-heading"><div><span class="eyebrow">TopBearing</span><h1>Контакти та доставка</h1></div></div>
+  <div class="contact-grid">
+    <section class="panel">
+      <h2>Контакти</h2>
+      <dl class="detail-list">
+        {% if settings.contact_phone %}<div><dt>Телефон</dt><dd><a href="tel:{{ settings.contact_phone|replace(' ', '') }}">{{ settings.contact_phone }}</a></dd></div>{% endif %}
+        {% if settings.contact_email %}<div><dt>Email</dt><dd><a href="mailto:{{ settings.contact_email }}">{{ settings.contact_email }}</a></dd></div>{% endif %}
+        {% if tg_url %}<div><dt>Telegram</dt><dd><a href="{{ tg_url }}" rel="noopener noreferrer">{{ settings.contact_telegram }}</a></dd></div>{% endif %}
+        {% if vb_url %}<div><dt>Viber</dt><dd><a href="{{ vb_url }}" rel="noopener noreferrer">Написати у Viber</a></dd></div>{% endif %}
+        {% if settings.contact_address %}<div><dt>Адреса</dt><dd>{{ settings.contact_address }}</dd></div>{% endif %}
+      </dl>
+    </section>
+    <section class="panel"><h2>Доставка</h2><ul class="clean-list"><li>Нова пошта — відділення або поштомат</li><li>Укрпошта — відділення за індексом</li><li>Самовивіз — за попереднім узгодженням</li></ul><div class="shipping-note">{{ settings.shipping_notice }}</div></section>
+    <section class="panel"><h2>Оплата</h2><ul class="clean-list">{% if settings.online_payment_enabled %}<li>Онлайн-оплата карткою</li>{% endif %}{% if settings.bank_transfer_enabled %}<li>Оплата за рахунком / безготівково</li>{% endif %}{% if settings.cod_enabled %}<li>Післяплата для замовлень від {{ settings.cod_min_total|money }} грн</li>{% endif %}</ul></section>
+  </div>
+</section>
+{% endblock %}

@@ -54,7 +54,7 @@
         {% endif %}
       </nav>
       <a class="cart-link" href="/cart" aria-label="Кошик">
-        <span class="cart-icon">▣</span><span class="desktop-only">Кошик</span><span class="nav-count">{{ cart_count }}</span>
+        <span class="cart-icon">▣</span><span class="desktop-only">Кошик</span><span class="nav-count" data-cart-count>{{ cart_count }}</span>
       </a>
     </div>
     <div class="header-search container">
@@ -74,8 +74,13 @@
     <div class="mobile-drawer-scroll">
       <nav class="mobile-nav">
         <a href="/">Головна</a>
-        <a href="/catalog">Усі товари</a>
-        {% for category in categories %}<a href="/catalog/{{ category.code }}">{{ category.name or category.code }}</a>{% endfor %}
+        <details class="mobile-nav-section">
+          <summary>Каталог</summary>
+          <div class="mobile-nav-submenu">
+            <a href="/catalog">Усі товари</a>
+            {% for category in categories %}<a href="/catalog/{{ category.code }}">{{ category.name or category.code }}</a>{% endfor %}
+          </div>
+        </details>
         <a href="/favorites">Обране <span data-favorites-count>0</span></a>
         <a href="/contacts">Контакти</a>
         {% if current_user %}
@@ -90,10 +95,14 @@
           <a href="/register">Зареєструватися</a>
         {% endif %}
       </nav>
-      {% if settings.contact_phone or settings.contact_email %}
+      {% set tg_url = telegram_href(settings.contact_telegram) %}
+      {% set vb_url = viber_href(settings.contact_viber) %}
+      {% if settings.contact_phone or settings.contact_email or tg_url or vb_url %}
       <div class="drawer-contacts">
+        <strong class="drawer-contact-title">Зв’язок</strong>
         {% if settings.contact_phone %}<a href="tel:{{ settings.contact_phone|replace(' ', '') }}">{{ settings.contact_phone }}</a>{% endif %}
         {% if settings.contact_email %}<a href="mailto:{{ settings.contact_email }}">{{ settings.contact_email }}</a>{% endif %}
+        {% if tg_url or vb_url %}<div class="drawer-socials">{% if tg_url %}<a href="{{ tg_url }}" rel="noopener noreferrer">Telegram</a>{% endif %}{% if vb_url %}<a href="{{ vb_url }}" rel="noopener noreferrer">Viber</a>{% endif %}</div>{% endif %}
       </div>
       {% endif %}
     </div>
@@ -111,7 +120,8 @@
         <p>Підшипники, ремені, сальники, змащення та промислові комплектуючі.</p>
       </div>
       <div><strong>Покупцям</strong><a href="/catalog">Каталог</a><a href="/contacts">Доставка та контакти</a><a href="/favorites">Обране</a></div>
-      <div><strong>Контакти</strong>{% if settings.contact_phone %}<a href="tel:{{ settings.contact_phone|replace(' ', '') }}">{{ settings.contact_phone }}</a>{% endif %}{% if settings.contact_email %}<a href="mailto:{{ settings.contact_email }}">{{ settings.contact_email }}</a>{% endif %}{% if settings.contact_address %}<span>{{ settings.contact_address }}</span>{% endif %}</div>
+      {% set footer_tg_url = telegram_href(settings.contact_telegram) %}{% set footer_vb_url = viber_href(settings.contact_viber) %}
+      <div><strong>Контакти</strong>{% if settings.contact_phone %}<a href="tel:{{ settings.contact_phone|replace(' ', '') }}">{{ settings.contact_phone }}</a>{% endif %}{% if settings.contact_email %}<a href="mailto:{{ settings.contact_email }}">{{ settings.contact_email }}</a>{% endif %}{% if footer_tg_url %}<a href="{{ footer_tg_url }}" rel="noopener noreferrer">Telegram</a>{% endif %}{% if footer_vb_url %}<a href="{{ footer_vb_url }}" rel="noopener noreferrer">Viber</a>{% endif %}{% if settings.contact_address %}<span>{{ settings.contact_address }}</span>{% endif %}</div>
     </div>
     <div class="container footer-note">{{ settings.shipping_notice }}</div>
   </footer>

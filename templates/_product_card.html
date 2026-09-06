@@ -10,7 +10,7 @@
     </div>
     <a class="product-card-title" href="/product/{{ product.slug }}">{{ product.name }}</a>
     {% if product.manufacturer_code is not none and (product.manufacturer_code|string|trim|lower) not in empty_values %}
-      <div class="product-code">Арт. {{ product.manufacturer_code }}</div>
+      <div class="product-code">Маркування: {{ product.manufacturer_code }}</div>
     {% endif %}
     <div class="availability availability-{{ product.storefront_availability }}">{{ availability_label(product) }}</div>
     <div class="product-card-bottom">

@@ -9,6 +9,7 @@
     <div class="form-error"><strong>Перевірте форму:</strong><ul>{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul></div>
   {% endif %}
 
+  {% set enabled_payment_options = payment_options|selectattr('enabled')|list %}
   <form method="post" action="/checkout" class="checkout-layout" data-checkout-form>
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
@@ -38,36 +39,25 @@
         </div>
         <datalist id="np-city-list"></datalist>
         <datalist id="np-warehouse-list"></datalist>
-
         <div class="shipping-note">{{ settings.shipping_notice }}</div>
       </section>
 
       <section class="panel">
         <h2>3. Оплата</h2>
 
-        {% if settings.online_payment_enabled and not online_payment_ready %}
-          <div class="form-error">Онлайн-оплата зараз недоступна. Адміністратору потрібно перевірити налаштування LiqPay на сервері.</div>
-        {% endif %}
-
         {% if payment_options %}
           <div class="payment-options">
+            {% set payment_ns = namespace(selected=false) %}
             {% for option in payment_options %}
-              <label class="radio-card">
+              {% set selected_from_form = form_data and form_data.get('payment_method') == option.value and option.enabled %}
+              {% set selected_by_default = (not form_data) and option.enabled and not payment_ns.selected %}
+              <label class="radio-card{% if not option.enabled %} disabled{% endif %}">
                 <input
                   type="radio"
                   name="payment_method"
                   value="{{ option.value }}"
-                  {% if
-                    (form_data and form_data.get('payment_method') == option.value)
-                    or
-                    (
-                      not form_data
-                      and (
-                        (online_payment_ready and option.value == 'online')
-                        or (not online_payment_ready and loop.first)
-                      )
-                    )
-                  %}checked{% endif %}
+                  {% if not option.enabled %}disabled{% endif %}
+                  {% if selected_from_form or selected_by_default %}checked{% set payment_ns.selected = true %}{% endif %}
                 >
                 <span>
                   <strong>
@@ -80,25 +70,27 @@
                     {% endif %}
                   </strong>
 
-                  {% if option.value == 'cod' %}
-                    <small>Доступно для замовлень від {{ settings.cod_min_total|money }} грн</small>
+                  {% if option.reason %}
+                    <small class="payment-unavailable">{{ option.reason }}</small>
+                  {% elif option.value == 'cod' %}
+                    <small>Сплата перевізнику при отриманні замовлення.</small>
                   {% elif option.value == 'online' %}
                     {% if online_provider == 'liqpay' %}
-                      <small>Visa/Mastercard, Apple Pay, Google Pay, Privat24. Після підтвердження замовлення відкриється захищена сторінка LiqPay.</small>
+                      <small>Visa/Mastercard, Apple Pay, Google Pay, Privat24. Після підтвердження відкриється захищена сторінка LiqPay.</small>
                     {% elif online_provider == 'monobank' %}
-                      <small>Резервна онлайн-оплата через Monobank.</small>
+                      <small>Захищена онлайн-оплата через Monobank.</small>
                     {% else %}
                       <small>Безпечна онлайн-оплата карткою.</small>
                     {% endif %}
                   {% else %}
-                    <small>Реквізити підтвердить менеджер.</small>
+                    <small>Замовлення перейде менеджеру в обробку. Реквізити або рахунок буде погоджено окремо.</small>
                   {% endif %}
                 </span>
               </label>
             {% endfor %}
           </div>
         {% else %}
-          <div class="form-error">Наразі немає доступного способу оплати. Перевірте налаштування магазину.</div>
+          <div class="form-error">У налаштуваннях магазину не ввімкнено жодного способу оплати.</div>
         {% endif %}
 
         <label>Коментар до замовлення<textarea name="comment" rows="3" placeholder="За потреби додайте уточнення">{{ form_data.get('comment','') if form_data else '' }}</textarea></label>
@@ -112,8 +104,8 @@
       {% endfor %}
       <div class="summary-row"><span>Доставка</span><span>за тарифами перевізника</span></div>
       <div class="summary-total"><span>Разом</span><strong>{{ subtotal|money }} грн</strong></div>
-      <button class="primary-button large-button" type="submit" data-checkout-submit {% if not payment_options %}disabled{% endif %}>Підтвердити замовлення</button>
-      <p class="muted">Для онлайн-оплати спочатку відкриється LiqPay. Повідомлення про успішне замовлення буде показано після повернення з платіжної сторінки.</p>
+      <button class="primary-button large-button" type="submit" data-checkout-submit {% if not enabled_payment_options %}disabled{% endif %}>Підтвердити замовлення</button>
+      <p class="muted" data-payment-note>Оберіть спосіб оплати.</p>
     </aside>
   </form>
 </section>
@@ -124,20 +116,30 @@
 (() => {
   const form = document.querySelector('[data-checkout-form]');
   const submitButton = form?.querySelector('[data-checkout-submit]');
+  const note = form?.querySelector('[data-payment-note]');
   if (!form || !submitButton) return;
 
-  const updateSubmitText = () => {
+  const updatePaymentUi = () => {
     const selected = form.querySelector('input[name="payment_method"]:checked');
-    submitButton.textContent = selected?.value === 'online'
-      ? 'Перейти до оплати'
-      : 'Підтвердити замовлення';
+    if (!selected) {
+      submitButton.textContent = 'Підтвердити замовлення';
+      if (note) note.textContent = 'Оберіть доступний спосіб оплати.';
+      return;
+    }
+    if (selected.value === 'online') {
+      submitButton.textContent = 'Перейти до оплати';
+      if (note) note.textContent = 'Після створення замовлення відкриється захищена платіжна сторінка.';
+    } else if (selected.value === 'bank_transfer') {
+      submitButton.textContent = 'Підтвердити замовлення';
+      if (note) note.textContent = 'Замовлення буде передано менеджеру в обробку без автоматичного переходу до LiqPay.';
+    } else {
+      submitButton.textContent = 'Підтвердити замовлення';
+      if (note) note.textContent = 'Оплата відбудеться при отриманні у перевізника.';
+    }
   };
 
-  form.querySelectorAll('input[name="payment_method"]').forEach((radio) => {
-    radio.addEventListener('change', updateSubmitText);
-  });
-
-  updateSubmitText();
+  form.querySelectorAll('input[name="payment_method"]').forEach((radio) => radio.addEventListener('change', updatePaymentUi));
+  updatePaymentUi();
 })();
 </script>
 <script src="{{ url_for('static', path='js/nova-poshta-checkout.js') }}" defer></script>

@@ -234,6 +234,7 @@ class StoreSettings(Base):
     contact_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     contact_address: Mapped[str | None] = mapped_column(String(300), nullable=True)
     contact_telegram: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    contact_viber: Mapped[str | None] = mapped_column(String(160), nullable=True)
     shipping_notice: Mapped[str] = mapped_column(
         String(240), default="Відправка замовлень відбувається протягом 1–3 робочих днів.", nullable=False
     )

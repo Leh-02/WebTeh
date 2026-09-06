@@ -44,7 +44,7 @@
       </label>
 
       <label>Мінімальна сума для післяплати, грн<input type="number" min="0" step="1" name="cod_min_total" value="{{ store_settings.cod_min_total }}"></label>
-      <div class="shipping-note">Логіка проста: нижче цього ліміту післяплата не пропонується. Жодних окремих правил оплати на рівні товару чи категорії.</div>
+      <div class="shipping-note">Нижче цього ліміту післяплата залишається видимою клієнту, але неактивною. Окремі правила товару/категорії можуть додатково вимагати передоплату або заборонити післяплату.</div>
     </section>
 
     <section class="panel">
@@ -52,7 +52,8 @@
       <label>Телефон<input name="contact_phone" value="{{ store_settings.contact_phone or '' }}" placeholder="+380..."></label>
       <label>Email<input type="email" name="contact_email" value="{{ store_settings.contact_email or '' }}"></label>
       <label>Адреса<input name="contact_address" value="{{ store_settings.contact_address or '' }}"></label>
-      <label>Telegram<input name="contact_telegram" value="{{ store_settings.contact_telegram or '' }}" placeholder="@topbearing або посилання"></label>
+      <label>Telegram<input name="contact_telegram" value="{{ store_settings.contact_telegram or '' }}" placeholder="@topbearing або https://t.me/topbearing"></label>
+      <label>Viber<input name="contact_viber" value="{{ store_settings.contact_viber or '' }}" placeholder="+380... або viber://..."></label>
     </section>
 
     <section class="panel">

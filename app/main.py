@@ -8,6 +8,7 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -110,6 +111,11 @@ PAYMENT_STATUS_LABELS = {
     "refund_pending": "Повернення в процесі",
     "refunded": "Повернено",
 }
+PAYMENT_METHOD_LABELS = {
+    "online": "Онлайн-оплата",
+    "bank_transfer": "Оплата за рахунком / безготівково",
+    "cod": "Післяплата при отриманні",
+}
 DELIVERY_LABELS = {
     "nova_poshta": "Нова пошта",
     "ukrposhta": "Укрпошта",
@@ -160,11 +166,14 @@ def _bootstrap_data() -> None:
 _bootstrap_data()
 
 app = FastAPI(title="TopBearing")
+APP_ENV = os.getenv("APP_ENV", "development").strip().lower()
+COOKIE_SECURE = APP_ENV == "production" or os.getenv("COOKIE_SECURE", "0") == "1"
 app.add_middleware(
     SessionMiddleware,
     secret_key=get_session_secret(),
+    session_cookie="topbearing_session",
     same_site="lax",
-    https_only=os.getenv("COOKIE_SECURE", "0") == "1",
+    https_only=COOKIE_SECURE,
     max_age=60 * 60 * 24 * 14,
 )
 app.add_middleware(SimpleRateLimitMiddleware)
@@ -188,8 +197,10 @@ async def security_headers(request: Request, call_next):
         "form-action 'self' https://www.liqpay.ua https://*.liqpay.ua; "
         "frame-ancestors 'none'; object-src 'none'; base-uri 'self'"
     )
-    if os.getenv("COOKIE_SECURE", "0") == "1":
+    if COOKIE_SECURE:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    if request.url.path.startswith(("/admin", "/account", "/checkout", "/order/")):
+        response.headers["Cache-Control"] = "no-store"
     return response
 
 
@@ -217,14 +228,72 @@ def alternative_marking_list(value: str | None) -> list[str]:
     return [item.strip() for item in (value or "").splitlines() if item.strip()]
 
 
+def clean_number(value: Any) -> str:
+    if value is None or value == "":
+        return ""
+    try:
+        number = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return str(value)
+    if number == 0:
+        return "0"
+    return format(number.normalize(), "f")
+
+
+def client_order_status_label(order: Order) -> str:
+    # "new" is useful internally for the admin queue, but to a customer the
+    # order has already been accepted and is being processed.
+    if order.status == "new":
+        return "В обробці"
+    return ORDER_STATUS_LABELS.get(order.status, order.status)
+
+
+def client_payment_status_label(order: Order) -> str:
+    if order.payment_method == "bank_transfer" and order.payment_status == "awaiting_payment":
+        return "Очікує підтвердження менеджера"
+    if order.payment_method == "cod" and order.payment_status == "unpaid":
+        return "Оплата при отриманні"
+    return PAYMENT_STATUS_LABELS.get(order.payment_status, order.payment_status)
+
+
+def telegram_href(value: str | None) -> str | None:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    if raw.startswith("https://") or raw.startswith("http://"):
+        return raw
+    handle = raw.lstrip("@").strip()
+    if re.fullmatch(r"[A-Za-z0-9_]{5,32}", handle):
+        return f"https://t.me/{handle}"
+    return None
+
+
+def viber_href(value: str | None) -> str | None:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    if raw.startswith("viber://") or raw.startswith("https://") or raw.startswith("http://"):
+        return raw
+    digits = re.sub(r"[^0-9+]", "", raw)
+    if digits.startswith("+") and len(re.sub(r"\D", "", digits)) >= 9:
+        return f"viber://chat?number={quote(digits, safe='')}"
+    return None
+
+
 templates.env.filters["money"] = money
+templates.env.filters["clean_number"] = clean_number
 templates.env.filters["category_kind"] = category_kind
 templates.env.globals.update(
     availability_label=availability_label,
     order_status_labels=ORDER_STATUS_LABELS,
     payment_status_labels=PAYMENT_STATUS_LABELS,
+    payment_method_labels=PAYMENT_METHOD_LABELS,
     delivery_labels=DELIVERY_LABELS,
     alternative_marking_list=alternative_marking_list,
+    client_order_status_label=client_order_status_label,
+    client_payment_status_label=client_payment_status_label,
+    telegram_href=telegram_href,
+    viber_href=viber_href,
 )
 
 
@@ -801,6 +870,40 @@ async def cart_update(request: Request, db: Session = Depends(get_db)):
     return RedirectResponse("/cart", status_code=303)
 
 
+@app.post("/cart/item/{product_id}")
+async def cart_item_update(product_id: int, request: Request, db: Session = Depends(get_db)):
+    form = await request.form()
+    verify_csrf(request, form)
+    product = db.scalar(select(Product).where(Product.id == product_id, Product.is_active.is_(True)))
+    if not product:
+        raise HTTPException(status_code=404)
+
+    requested_qty = max(1, min(as_int(str(form.get("qty", "1")), 1) or 1, 999))
+    if product.stock_is_tracked:
+        if product.stock_qty <= 0:
+            raise HTTPException(status_code=409, detail="Товару більше немає в наявності.")
+        requested_qty = min(requested_qty, product.stock_qty)
+
+    cart = _cart_map(request)
+    if str(product_id) not in cart:
+        raise HTTPException(status_code=404, detail="Товару немає у кошику.")
+    cart[str(product_id)] = requested_qty
+    request.session["cart"] = cart
+
+    items, subtotal = cart_details(request, db)
+    line = next((item for item in items if item["product"].id == product_id), None)
+    return JSONResponse(
+        {
+            "ok": True,
+            "product_id": product_id,
+            "qty": requested_qty,
+            "line_total": str(line["line_total"] if line else Decimal("0.00")),
+            "subtotal": str(subtotal),
+            "cart_count": cart_count(request),
+        }
+    )
+
+
 @app.post("/cart/remove/{product_id}")
 async def cart_remove(product_id: int, request: Request):
     form = await request.form()
@@ -1065,7 +1168,7 @@ async def checkout_submit(request: Request, db: Session = Depends(get_db)):
 
     settings = _settings(db)
     options = payment_options(subtotal, settings, monobank_ready=online_payment_available(), products=[item["product"] for item in items])
-    allowed_methods = {o["value"] for o in options}
+    allowed_methods = {o["value"] for o in options if o.get("enabled")}
     if payment_method not in allowed_methods:
         errors.append("Оберіть доступний спосіб оплати.")
 
@@ -1659,7 +1762,8 @@ async def admin_order_update(order_id: int, request: Request, db: Session = Depe
             return RedirectResponse(f"/admin/orders/{order.id}", status_code=303)
 
     order.status = new_status
-    order.tracking_number = str(form.get("tracking_number", "")).strip() or None
+    if "tracking_number" in form:
+        order.tracking_number = str(form.get("tracking_number", "")).strip() or None
     if order.payment_method != "online":
         payment_status = str(form.get("payment_status", order.payment_status))
         if payment_status in PAYMENT_STATUS_LABELS:
@@ -1766,7 +1870,8 @@ async def admin_settings_save(request: Request, db: Session = Depends(get_db)):
     settings.contact_phone = str(form.get("contact_phone", "")).strip() or None
     settings.contact_email = str(form.get("contact_email", "")).strip() or None
     settings.contact_address = str(form.get("contact_address", "")).strip() or None
-    settings.contact_telegram = str(form.get("contact_telegram", "")).strip() or None
+    settings.contact_telegram = str(form.get("contact_telegram", "")).strip()[:160] or None
+    settings.contact_viber = str(form.get("contact_viber", "")).strip()[:160] or None
     settings.shipping_notice = str(form.get("shipping_notice", "")).strip() or "Відправка замовлень відбувається протягом 1–3 робочих днів."
     audit(db, admin, "settings_update", "store_settings", 1)
     db.commit()

@@ -1,83 +1,31 @@
-# =========================
-# Python
-# =========================
-__pycache__/
-*.py[cod]
-*.pyo
-*.pyd
-
-# Virtual environments
-.venv/
-venv/
-env/
-
-# =========================
-# Environment / secrets
-# =========================
+# Secrets / local environment
 .env
-.env.local
-.env.production
-.env.development
-.env.test
-
-# Але .env.example можна зберігати в Git
+.env.*
 !.env.example
 
-# =========================
-# Local databases
-# =========================
-*.db
-*.sqlite
-*.sqlite3
-*.db-shm
-*.db-wal
-
-# =========================
-# User uploaded files
-# =========================
-static/uploads/*
-!static/uploads/.gitkeep
-
-# =========================
-# IDE
-# =========================
-.idea/
-.vscode/
-
-# =========================
-# Python / test caches
-# =========================
+# Python
+__pycache__/
+*.py[cod]
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-.coverage
-htmlcov/
+.venv/
+venv/
 
-# =========================
-# Logs / temporary files
-# =========================
-*.log
-logs/
-tmp/
-temp/
-*.tmp
+# Local databases / backups
+*.db
+*.sqlite
+*.sqlite3
+*.dump
+*.backup
+*.sql
 
-# =========================
-# OS files
-# =========================
+# IDE / OS
+.idea/
+.vscode/
 .DS_Store
 Thumbs.db
 
-# =========================
-# Python packaging
-# =========================
-build/
-dist/
-*.egg-info/
-
-# =========================
-# Backups
-# =========================
-backups/
-*.bak
-*.backup
+# Logs
+*.log
+logs/
