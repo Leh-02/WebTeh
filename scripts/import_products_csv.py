@@ -7,7 +7,6 @@ short_description,description,image_url,require_prepayment,cod_allowed
 
 Category policy (optional):
 category_require_prepayment,category_cod_allowed
-
 Existing products keep their SEO slug unless --regenerate-slugs is used.
 """
 from __future__ import annotations
@@ -18,7 +17,6 @@ from sqlalchemy import func, select
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-
 from app.database import SessionLocal
 from app.models import BeltSpec, BearingSpec, Brand, Category, LubricantSpec, Product, ProductImage, SealSpec
 from app.services.slug_service import make_unique_product_slug, remember_slug_redirect, slugify
