@@ -1,17 +1,14 @@
-{% set empty_values = ['', 'none', 'null', '-', '—'] %}
 <article class="product-card" data-product-card data-product-id="{{ product.id }}">
   <a class="product-card-image" href="/product/{{ product.slug }}">
-    {% if product.primary_image %}<img src="{{ product.primary_image }}" alt="{{ product.name }}" loading="lazy">{% else %}<span class="image-placeholder">TB</span>{% endif %}
+    <img src="{{ product_media_url(product) }}" alt="{{ product.name }}" loading="lazy">
   </a>
   <div class="product-card-body">
     <div class="product-card-topline">
-      {% if product.brand and product.brand.name != 'Без бренду' %}<span class="product-brand">{{ product.brand.name }}</span>{% endif %}
+      {% if product_display_brand(product) %}<span class="product-brand">{{ product_display_brand(product) }}</span>{% elif product_origin_label(product) %}<span class="product-origin">{{ product_origin_label(product) }}</span>{% else %}<span></span>{% endif %}
       <button class="favorite-btn" type="button" data-favorite-button data-product-id="{{ product.id }}" aria-label="Додати в обране">♡</button>
     </div>
     <a class="product-card-title" href="/product/{{ product.slug }}">{{ product.name }}</a>
-    {% if product.manufacturer_code is not none and (product.manufacturer_code|string|trim|lower) not in empty_values %}
-      <div class="product-code">Маркування: {{ product.manufacturer_code }}</div>
-    {% endif %}
+    {% if product_size_label(product) %}<div class="product-code">Розмір: {{ product_size_label(product) }}</div>{% endif %}
     <div class="availability availability-{{ product.storefront_availability }}">{{ availability_label(product) }}</div>
     <div class="product-card-bottom">
       <strong class="product-price">{{ product.price|money }} грн</strong>

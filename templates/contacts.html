@@ -13,6 +13,7 @@
         {% if settings.contact_email %}<div><dt>Email</dt><dd><a href="mailto:{{ settings.contact_email }}">{{ settings.contact_email }}</a></dd></div>{% endif %}
         {% if tg_url %}<div><dt>Telegram</dt><dd><a href="{{ tg_url }}" rel="noopener noreferrer">{{ settings.contact_telegram }}</a></dd></div>{% endif %}
         {% if vb_url %}<div><dt>Viber</dt><dd><a href="{{ vb_url }}" rel="noopener noreferrer">Написати у Viber</a></dd></div>{% endif %}
+        <div><dt>Місто</dt><dd>Полтава</dd></div>
         {% if settings.contact_address %}<div><dt>Адреса</dt><dd>{{ settings.contact_address }}</dd></div>{% endif %}
       </dl>
     </section>

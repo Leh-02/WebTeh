@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Редагування категорії' if category else 'Нова категорія' }} — TopBearing Admin{% endblock %}
+{% block content %}
+{% set fd = form_data or {} %}
+<section class="container page-shell admin-shell">
+  <div class="page-heading"><div><span class="eyebrow">Адмін-панель</span><h1>{{ 'Редагування категорії' if category else 'Нова категорія' }}</h1></div></div>
+  <nav class="admin-nav"><a href="/admin">Огляд</a><a href="/admin/products">Товари</a><a class="active" href="/admin/categories">Категорії</a><a href="/admin/orders">Замовлення</a><a href="/admin/settings">Налаштування</a></nav>
+
+  {% if errors %}<div class="form-errors panel"><strong>Перевірте форму:</strong><ul>{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul></div>{% endif %}
+
+  <form method="post" action="/admin/categories/save" class="admin-category-form" data-category-admin-form>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% if category %}<input type="hidden" name="category_id" value="{{ category.id }}">{% endif %}
+
+    <div class="admin-form-layout">
+      <div class="admin-form-main">
+        <section class="panel">
+          <h2>Основне</h2>
+          <div class="form-grid-2">
+            <label>Назва *<input name="name" required value="{{ fd.get('name', category.name if category else '') }}" placeholder="Наприклад: Сферичні роликові"></label>
+            <label>Код URL
+              <input name="code" value="{{ fd.get('code', category.code if category else '') }}" placeholder="Створиться автоматично" {% if category %}readonly{% endif %}>
+              <small>{% if category %}Стабільний код не змінюється після створення, щоб не ламати URL.{% else %}Можна залишити порожнім — код буде створено з назви.{% endif %}</small>
+            </label>
+          </div>
+          <label>Опис<textarea name="description" rows="3" placeholder="Короткий опис для каталогу">{{ fd.get('description', category.description if category and category.description else '') }}</textarea></label>
+        </section>
+
+        <section class="panel">
+          <h2>Структура каталогу</h2>
+          <div class="form-grid-2">
+            <label>Батьківська категорія
+              <select name="parent_id" data-category-parent>
+                <option value="">— Основна категорія —</option>
+                {% for item in categories %}
+                  {% if not category or item.id != category.id %}
+                  <option value="{{ item.id }}" data-product-type="{{ item.product_type }}" {% if fd.get('parent_id') == item.id|string or (not fd.get('parent_id') and category and category.parent_id == item.id) %}selected{% endif %}>{{ item.name or item.code }}</option>
+                  {% endif %}
+                {% endfor %}
+              </select>
+            </label>
+            <label>Тип характеристик *
+              <select name="product_type" required data-category-product-type>
+                {% set selected_type = fd.get('product_type', category.product_type if category else 'generic') %}
+                {% for value,label in product_type_labels.items() %}<option value="{{ value }}" {% if selected_type == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+              </select>
+              <small>Для підкатегорії тип автоматично успадковується від батьківської.</small><small data-category-type-hint hidden>Тип оновлено відповідно до вибраної батьківської категорії.</small>
+            </label>
+          </div>
+          <label>Порядок сортування<input type="number" name="sort_order" value="{{ fd.get('sort_order', category.sort_order if category else 100) }}"></label>
+        </section>
+
+        <section class="panel">
+          <h2>Відображення та оплата</h2>
+          <label class="check-row"><input type="checkbox" name="is_active" value="1" {% if fd.get('is_active') == '1' or (not fd and (not category or category.is_active)) %}checked{% endif %}><span><strong>Категорія активна</strong></span></label>
+          <label class="check-row"><input type="checkbox" name="show_in_menu" value="1" {% if fd.get('show_in_menu') == '1' or (not fd and (not category or category.show_in_menu)) %}checked{% endif %}><span><strong>Показувати в каталозі та меню</strong></span></label>
+          <label class="check-row"><input type="checkbox" name="require_prepayment" value="1" {% if fd.get('require_prepayment') == '1' or (not fd and category and category.require_prepayment) %}checked{% endif %}><span><strong>Вимагати передоплату для товарів категорії</strong></span></label>
+          <label class="check-row"><input type="checkbox" name="cod_allowed" value="1" {% if fd.get('cod_allowed') == '1' or (not fd and (not category or category.cod_allowed)) %}checked{% endif %}><span><strong>Дозволяти післяплату</strong></span></label>
+        </section>
+      </div>
+      <aside class="admin-form-side"><div class="panel sticky-save"><h2>Збереження</h2><button class="primary-button" type="submit">Зберегти категорію</button><a class="secondary-button" href="/admin/categories">Скасувати</a></div></aside>
+    </div>
+  </form>
+</section>
+{% endblock %}

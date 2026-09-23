@@ -11,11 +11,11 @@ from typing import Any
 from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func, or_, select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import and_, func, or_, select
+from sqlalchemy.orm import Session, aliased, selectinload
 from starlette.middleware.sessions import SessionMiddleware
 
 from .database import SessionLocal, get_db
@@ -42,7 +42,7 @@ from .security import (
     verify_password,
     get_session_secret,
 )
-from .services.catalog import build_catalog_statement, normalize_category_code
+from .services.catalog import build_catalog_statement, normalize_belt_profile, normalize_category_code
 from .services.email_service import send_password_reset_email
 from .services.liqpay import (
     LiqPayError,
@@ -81,19 +81,13 @@ MAX_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_PRODUCT_IMAGES = 8
 ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 
-CATEGORY_META = {
-    "bearings": ("Підшипники", "Підшипники різних типів та розмірів", 10),
-    "belts": ("Пасові ремені", "Клинові, зубчасті та інші приводні ремені", 20),
-    "seals": ("Сальники та манжети", "Ущільнення за розмірами та матеріалами", 30),
-    "lubricants": ("Змащення", "Мастила та технічні змащувальні матеріали", 40),
-    "accessories": ("Аксесуари", "Супутні товари та комплектуючі", 50),
-}
-CATEGORY_CODE_ALIASES = {
-    "bearings": {"bearings", "bearing"},
-    "belts": {"belts", "belt"},
-    "seals": {"seals", "seal"},
-    "lubricants": {"lubricants", "lubricant"},
-    "accessories": {"accessories", "accessory"},
+PRODUCT_TYPE_LABELS = {
+    "bearings": "Підшипники",
+    "belts": "Пасові ремені",
+    "seals": "Сальники та манжети",
+    "lubricants": "Змащення",
+    "accessories": "Аксесуари / комплектуючі",
+    "generic": "Загальний товар",
 }
 
 ORDER_STATUS_LABELS = {
@@ -125,26 +119,6 @@ DELIVERY_LABELS = {
 
 def _bootstrap_data() -> None:
     with SessionLocal() as db:
-        categories = db.scalars(select(Category)).all()
-        by_code = {c.code: c for c in categories}
-        for canonical, (name, description, sort_order) in CATEGORY_META.items():
-            existing = next((by_code.get(alias) for alias in CATEGORY_CODE_ALIASES[canonical] if by_code.get(alias)), None)
-            if existing:
-                existing.name = existing.name or name
-                existing.description = existing.description or description
-                existing.is_active = True
-                existing.sort_order = sort_order
-            else:
-                db.add(
-                    Category(
-                        code=canonical,
-                        name=name,
-                        description=description,
-                        sort_order=sort_order,
-                        is_active=True,
-                    )
-                )
-
         no_brand = db.scalar(select(Brand).where(Brand.name == "Без бренду"))
         if not no_brand:
             db.add(Brand(name="Без бренду", slug="bez-brendu"))
@@ -216,6 +190,56 @@ def category_kind(code: str | None) -> str:
     return normalize_category_code(code) or (code or "")
 
 
+def category_product_type(category: Category | None) -> str:
+    if not category:
+        return "generic"
+    return normalize_category_code(category.product_type) or "generic"
+
+
+def product_size_label(product: Product) -> str | None:
+    """Short, customer-facing size label used on catalogue cards."""
+    kind = category_product_type(product.category)
+    if kind == "bearings" and product.bearing_spec:
+        spec = product.bearing_spec
+        if all(value is not None for value in (spec.inner_diameter_mm, spec.outer_diameter_mm, spec.width_mm)):
+            return f"{clean_number(spec.inner_diameter_mm)} × {clean_number(spec.outer_diameter_mm)} × {clean_number(spec.width_mm)} мм"
+    if kind == "seals" and product.seal_spec:
+        spec = product.seal_spec
+        if all(value is not None for value in (spec.inner_diameter_mm, spec.outer_diameter_mm, spec.width_mm)):
+            return f"{clean_number(spec.inner_diameter_mm)} × {clean_number(spec.outer_diameter_mm)} × {clean_number(spec.width_mm)} мм"
+    if kind == "belts" and product.belt_spec:
+        spec = product.belt_spec
+        if spec.profile and spec.length_mm is not None:
+            return f"{spec.profile} / {clean_number(spec.length_mm)} мм"
+        if spec.length_mm is not None:
+            return f"{clean_number(spec.length_mm)} мм"
+        if spec.profile:
+            return spec.profile
+    if kind == "lubricants" and product.lubricant_spec and product.lubricant_spec.package_size:
+        return product.lubricant_spec.package_size
+    return None
+
+
+def product_display_brand(product: Product) -> str | None:
+    if product.brand and product.brand.name != "Без бренду":
+        return product.brand.name
+    return None
+
+
+def product_origin_label(product: Product) -> str | None:
+    if product_display_brand(product):
+        return None
+    return (product.manufacturing_country or "").strip() or None
+
+
+def product_media_url(product: Product) -> str:
+    if product.primary_image:
+        return product.primary_image
+    if category_product_type(product.category) in {"bearings", "belts", "seals"}:
+        return f"/product/{product.id}/diagram.svg"
+    return "/static/img/product-placeholder.svg"
+
+
 def availability_label(product: Product) -> str:
     return {
         "in_stock": "В наявності",
@@ -285,6 +309,12 @@ templates.env.filters["clean_number"] = clean_number
 templates.env.filters["category_kind"] = category_kind
 templates.env.globals.update(
     availability_label=availability_label,
+    category_product_type=category_product_type,
+    product_size_label=product_size_label,
+    product_display_brand=product_display_brand,
+    product_origin_label=product_origin_label,
+    product_media_url=product_media_url,
+    product_type_labels=PRODUCT_TYPE_LABELS,
     order_status_labels=ORDER_STATUS_LABELS,
     payment_status_labels=PAYMENT_STATUS_LABELS,
     payment_method_labels=PAYMENT_METHOD_LABELS,
@@ -398,16 +428,22 @@ def cart_details(request: Request, db: Session):
 
 
 def base_context(request: Request, db: Session, **extra: Any) -> dict[str, Any]:
-    category_stmt = select(Category).where(Category.is_active.is_(True))
+    category_stmt = select(Category)
     if not request.url.path.startswith("/admin"):
-        category_stmt = category_stmt.where(Category.products.any(Product.is_active.is_(True)))
-    categories = db.scalars(category_stmt.order_by(Category.sort_order, Category.id)).all()
+        category_stmt = category_stmt.where(Category.is_active.is_(True), Category.show_in_menu.is_(True))
+    categories = db.scalars(category_stmt.order_by(Category.sort_order, Category.name, Category.id)).all()
+    by_parent: dict[int | None, list[Category]] = {}
+    for category in categories:
+        by_parent.setdefault(category.parent_id, []).append(category)
+    root_categories = by_parent.get(None, [])
     ctx = {
         "request": request,
         "current_user": current_user(request, db),
         "cart_count": cart_count(request),
         "csrf_token": csrf_token(request),
         "categories": categories,
+        "root_categories": root_categories,
+        "category_children": by_parent,
         "settings": _settings(db),
         "flashes": pop_flashes(request),
         "mono_ready": monobank_configured(),
@@ -428,6 +464,64 @@ def render(request: Request, db: Session, name: str, status_code: int = 200, **e
         context=base_context(request, db, **extra),
         status_code=status_code,
     )
+
+
+def find_category_by_code(db: Session, code: str | None, *, active_only: bool = False) -> Category | None:
+    if not code:
+        return None
+    raw = code.strip().lower()
+    stmt = select(Category).where(func.lower(Category.code) == raw)
+    if active_only:
+        stmt = stmt.where(Category.is_active.is_(True))
+    category = db.scalar(stmt)
+    if category:
+        return category
+    # Backwards-compatible aliases for old links such as /catalog/bearing.
+    canonical = normalize_category_code(raw)
+    if canonical and canonical != raw:
+        stmt = select(Category).where(Category.code == canonical)
+        if active_only:
+            stmt = stmt.where(Category.is_active.is_(True))
+        return db.scalar(stmt)
+    return None
+
+
+def category_descendant_ids(db: Session, category: Category, *, active_only: bool = True) -> list[int]:
+    stmt = select(Category.id, Category.parent_id)
+    if active_only:
+        stmt = stmt.where(Category.is_active.is_(True))
+    rows = db.execute(stmt).all()
+    children: dict[int | None, list[int]] = {}
+    for category_id, parent_id in rows:
+        children.setdefault(parent_id, []).append(category_id)
+    result: list[int] = []
+    pending = [category.id]
+    seen: set[int] = set()
+    while pending:
+        current = pending.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        result.append(current)
+        pending.extend(children.get(current, []))
+    return result
+
+
+def pagination_items(page: int, pages: int, radius: int = 2) -> list[int | None]:
+    if pages <= 9:
+        return list(range(1, pages + 1))
+    wanted = {1, pages}
+    for item in range(max(1, page - radius), min(pages, page + radius) + 1):
+        wanted.add(item)
+    ordered = sorted(wanted)
+    result: list[int | None] = []
+    previous = None
+    for item in ordered:
+        if previous is not None and item - previous > 1:
+            result.append(None)
+        result.append(item)
+        previous = item
+    return result
 
 
 def safe_next(value: str | None, fallback: str = "/") -> str:
@@ -491,6 +585,25 @@ def generate_sku(db: Session, category_code: str) -> str:
             return sku
 
 
+def make_unique_category_code(
+    db: Session,
+    name: str,
+    *,
+    category_id: int | None = None,
+    requested_code: str | None = None,
+) -> str:
+    base = slugify(requested_code or name, lowercase=True, max_length=60) or "category"
+    candidate = base
+    index = 2
+    while True:
+        existing = db.scalar(select(Category).where(Category.code == candidate))
+        if not existing or existing.id == category_id:
+            return candidate
+        suffix = f"-{index}"
+        candidate = f"{base[:60-len(suffix)]}{suffix}"
+        index += 1
+
+
 def normalize_alternative_markings(value: str | None, primary: str | None = None) -> str | None:
     primary_key = (primary or "").strip().casefold()
     result: list[str] = []
@@ -514,8 +627,10 @@ def get_or_create_brand(
     db: Session,
     brand_name: str | None,
     brand_country: str | None = None,
-) -> Brand:
-    cleaned = (brand_name or "").strip() or "Без бренду"
+) -> Brand | None:
+    cleaned = (brand_name or "").strip()
+    if not cleaned or cleaned.casefold() == "без бренду":
+        return None
     country = (brand_country or "").strip()[:120] or None
     brand = next(
         (item for item in db.scalars(select(Brand)).all() if item.name.casefold() == cleaned.casefold()),
@@ -712,54 +827,247 @@ async def nova_poshta_warehouses(city_ref: str = "", q: str = ""):
     return JSONResponse(await search_warehouses(city_ref, q) if nova_poshta_configured() else [])
 
 
+@app.get("/api/catalog/brands")
+def catalog_brand_options(category: str = "", db: Session = Depends(get_db)):
+    """Return only brands that have active products in the selected category.
+
+    The endpoint updates the dependent brand select without submitting the
+    whole filter form, so customers can still apply filters explicitly.
+    """
+    category_obj = find_category_by_code(db, category, active_only=True) if category else None
+    if category and not category_obj:
+        return JSONResponse([])
+    category_ids = category_descendant_ids(db, category_obj) if category_obj else None
+    stmt = (
+        select(Brand)
+        .join(Product, Product.brand_id == Brand.id)
+        .where(Product.is_active.is_(True), Brand.name != "Без бренду")
+        .distinct()
+        .order_by(Brand.name)
+    )
+    if category_ids:
+        stmt = stmt.where(Product.category_id.in_(category_ids))
+    brands = db.scalars(stmt).all()
+    return JSONResponse([{"id": brand.id, "name": brand.name} for brand in brands])
+
+
 # --------------------------- Storefront ---------------------------
+
+
+def _product_card_options():
+    return (
+        selectinload(Product.images),
+        selectinload(Product.brand),
+        selectinload(Product.category),
+        selectinload(Product.bearing_spec),
+        selectinload(Product.belt_spec),
+        selectinload(Product.seal_spec),
+        selectinload(Product.lubricant_spec),
+    )
+
+
+def _popular_products(db: Session, limit: int = 8) -> list[Product]:
+    sales = (
+        select(OrderItem.product_id.label("product_id"), func.sum(OrderItem.qty).label("sold_qty"))
+        .join(Order, Order.id == OrderItem.order_id)
+        .where(OrderItem.product_id.is_not(None), Order.status != "cancelled")
+        .group_by(OrderItem.product_id)
+        .subquery()
+    )
+    return db.scalars(
+        select(Product)
+        .join(sales, sales.c.product_id == Product.id)
+        .where(Product.is_active.is_(True))
+        .order_by(sales.c.sold_qty.desc(), Product.id.desc())
+        .limit(limit)
+        .options(*_product_card_options())
+    ).all()
+
+
+def _similar_products(db: Session, product: Product, limit: int = 4) -> list[Product]:
+    kind = category_product_type(product.category)
+    stmt = select(Product).where(
+        Product.is_active.is_(True),
+        Product.id != product.id,
+        Product.category.has(Category.product_type == kind),
+    )
+
+    exact_filter = None
+    if kind == "bearings" and product.bearing_spec:
+        spec = product.bearing_spec
+        if all(value is not None for value in (spec.inner_diameter_mm, spec.outer_diameter_mm, spec.width_mm)):
+            target = Product.bearing_spec.property.mapper.class_
+            exact_filter = Product.bearing_spec.has(
+                and_(
+                    target.inner_diameter_mm == spec.inner_diameter_mm,
+                    target.outer_diameter_mm == spec.outer_diameter_mm,
+                    target.width_mm == spec.width_mm,
+                )
+            )
+    elif kind == "seals" and product.seal_spec:
+        spec = product.seal_spec
+        if all(value is not None for value in (spec.inner_diameter_mm, spec.outer_diameter_mm, spec.width_mm)):
+            target = Product.seal_spec.property.mapper.class_
+            exact_filter = Product.seal_spec.has(
+                and_(
+                    target.inner_diameter_mm == spec.inner_diameter_mm,
+                    target.outer_diameter_mm == spec.outer_diameter_mm,
+                    target.width_mm == spec.width_mm,
+                )
+            )
+    elif kind == "belts" and product.belt_spec:
+        spec = product.belt_spec
+        target = Product.belt_spec.property.mapper.class_
+        parts = []
+        if spec.profile:
+            parts.append(func.upper(func.coalesce(target.profile, "")) == normalize_belt_profile(spec.profile))
+        if spec.length_mm is not None:
+            parts.append(target.length_mm == spec.length_mm)
+        if parts:
+            exact_filter = Product.belt_spec.has(and_(*parts))
+
+    if exact_filter is not None:
+        exact = db.scalars(
+            stmt.where(exact_filter)
+            .order_by(Product.is_featured.desc(), Product.id.desc())
+            .limit(limit)
+            .options(*_product_card_options())
+        ).all()
+        if len(exact) >= limit:
+            return exact
+    else:
+        exact = []
+
+    excluded = {product.id, *(item.id for item in exact)}
+    # Fallback stays within the selected subcategory. If it is sparse, use the
+    # same product type so the section is still relevant rather than random.
+    fallback = db.scalars(
+        select(Product)
+        .where(
+            Product.is_active.is_(True),
+            Product.id.not_in(excluded),
+            or_(
+                Product.category_id == product.category_id,
+                Product.category.has(Category.product_type == kind),
+            ),
+        )
+        .order_by((Product.category_id == product.category_id).desc(), Product.is_featured.desc(), Product.id.desc())
+        .limit(max(0, limit - len(exact)))
+        .options(*_product_card_options())
+    ).all()
+    return [*exact, *fallback]
+
+
+def _bought_together_products(db: Session, product: Product, limit: int = 4) -> list[Product]:
+    selected_item = aliased(OrderItem)
+    other_item = aliased(OrderItem)
+    rows = db.execute(
+        select(other_item.product_id, func.sum(other_item.qty).label("weight"))
+        .join(selected_item, selected_item.order_id == other_item.order_id)
+        .join(Order, Order.id == other_item.order_id)
+        .where(
+            selected_item.product_id == product.id,
+            other_item.product_id.is_not(None),
+            other_item.product_id != product.id,
+            Order.status != "cancelled",
+        )
+        .group_by(other_item.product_id)
+        .order_by(func.sum(other_item.qty).desc())
+        .limit(limit)
+    ).all()
+    ids = [int(row.product_id) for row in rows if row.product_id is not None]
+    if not ids:
+        return []
+    products = db.scalars(
+        select(Product).where(Product.id.in_(ids), Product.is_active.is_(True)).options(*_product_card_options())
+    ).all()
+    by_id = {item.id: item for item in products}
+    return [by_id[item] for item in ids if item in by_id]
 
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request, db: Session = Depends(get_db)):
     featured = db.scalars(
         select(Product)
-        .where(Product.is_active.is_(True))
-        .order_by(Product.id.desc())
+        .where(Product.is_active.is_(True), Product.is_featured.is_(True))
+        .order_by(Product.updated_at.desc(), Product.id.desc())
         .limit(8)
-        .options(selectinload(Product.images), selectinload(Product.brand), selectinload(Product.category))
+        .options(*_product_card_options())
     ).all()
-    return render(request, db, "home.html", featured=featured)
+    featured_title = "Рекомендовані товари"
+    if not featured:
+        featured = _popular_products(db, 8)
+        featured_title = "Популярні товари"
+    if not featured:
+        featured = db.scalars(
+            select(Product)
+            .where(Product.is_active.is_(True))
+            .order_by(Product.updated_at.desc(), Product.id.desc())
+            .limit(8)
+            .options(*_product_card_options())
+        ).all()
+        featured_title = "Актуальні товари"
+    return render(request, db, "home.html", featured=featured, featured_title=featured_title)
 
 
 def _catalog_response(request: Request, db: Session, *, category_code_override: str | None = None):
     params = request.query_params
     category_code = category_code_override or params.get("category")
+    category_obj = find_category_by_code(db, category_code, active_only=True) if category_code else None
+    category_ids = category_descendant_ids(db, category_obj) if category_obj else None
+    product_type = category_product_type(category_obj) if category_obj else None
     brand_id = as_int(params.get("brand"))
     sort = params.get("sort", "relevance")
     page = max(1, as_int(params.get("page"), 1) or 1)
-    page_size = 24
-    stmt = build_catalog_statement(
+    page_size = as_int(params.get("per_page"), 24) or 24
+    if page_size not in {24, 50, 100, 200}:
+        page_size = 24
+    catalog_filters = dict(
         q=params.get("q"),
         category_code=category_code,
-        brand_id=brand_id,
+        category_ids=category_ids,
+        product_type=product_type,
         sort=sort,
         subtype=params.get("subtype"),
         profile=params.get("profile"),
         material=params.get("material"),
         viscosity=params.get("viscosity"),
+        rows=params.get("rows"),
+        series_type=params.get("series_type"),
         inner_min=params.get("inner_min"),
         inner_max=params.get("inner_max"),
         outer_min=params.get("outer_min"),
         outer_max=params.get("outer_max"),
+        width_min=params.get("width_min"),
+        width_max=params.get("width_max"),
         length_min=params.get("length_min"),
         length_max=params.get("length_max"),
     )
+    stmt = build_catalog_statement(brand_id=brand_id, **catalog_filters)
     total = db.scalar(select(func.count()).select_from(stmt.order_by(None).subquery())) or 0
-    products = db.scalars(stmt.offset((page - 1) * page_size).limit(page_size)).all()
-    brands = db.scalars(select(Brand).order_by(Brand.name)).all()
     pages = max(1, (total + page_size - 1) // page_size)
+    if page > pages:
+        page = pages
+    products = db.scalars(stmt.offset((page - 1) * page_size).limit(page_size)).all()
 
-    canonical_code = category_kind(category_code) if category_code else None
-    category_obj = db.scalar(select(Category).where(Category.code == canonical_code)) if canonical_code else None
+    # Brand options must come only from products that match the current
+    # catalogue scope (category + technical/search filters), ignoring only the
+    # brand filter itself. This prevents irrelevant brands from appearing in
+    # bearing/belt/etc. categories.
+    brand_scope = build_catalog_statement(brand_id=None, **catalog_filters).order_by(None).subquery()
+    brand_stmt = (
+        select(Brand)
+        .join(brand_scope, brand_scope.c.brand_id == Brand.id)
+        .where(Brand.name != "Без бренду")
+        .distinct()
+        .order_by(Brand.name)
+    )
+    brands = db.scalars(brand_stmt).all()
+
     filter_keys = {
-        "q", "brand", "sort", "subtype", "profile", "material", "viscosity",
-        "inner_min", "inner_max", "outer_min", "outer_max", "length_min", "length_max", "page",
+        "q", "brand", "sort", "subtype", "profile", "material", "viscosity", "rows", "series_type",
+        "inner_min", "inner_max", "outer_min", "outer_max", "width_min", "width_max",
+        "length_min", "length_max", "page", "per_page",
     }
     seo = catalog_seo_context(request, category_obj, has_filters=any(params.get(key) for key in filter_keys))
     return render(
@@ -769,10 +1077,14 @@ def _catalog_response(request: Request, db: Session, *, category_code_override: 
         products=products,
         total=total,
         brands=brands,
-        active_category=canonical_code,
+        active_category=category_obj.code if category_obj else None,
+        active_category_obj=category_obj,
+        active_product_type=product_type,
         params=dict(params),
         page=page,
         pages=pages,
+        per_page=page_size,
+        pagination_items=pagination_items(page, pages),
         **seo,
     )
 
@@ -787,11 +1099,10 @@ def catalog(request: Request, db: Session = Depends(get_db)):
 
 @app.get("/catalog/{category_code}", response_class=HTMLResponse)
 def catalog_category(category_code: str, request: Request, db: Session = Depends(get_db)):
-    canonical = category_kind(category_code)
-    category = db.scalar(select(Category).where(Category.code == canonical, Category.is_active.is_(True)))
+    category = find_category_by_code(db, category_code, active_only=True)
     if not category:
         raise HTTPException(status_code=404)
-    return _catalog_response(request, db, category_code_override=canonical)
+    return _catalog_response(request, db, category_code_override=category.code)
 
 
 @app.get("/product/{slug}", response_class=HTMLResponse)
@@ -818,13 +1129,66 @@ def product_page(slug: str, request: Request, db: Session = Depends(get_db)):
         if redirect and redirect.product and redirect.product.is_active:
             return RedirectResponse(f"/product/{redirect.product.slug}", status_code=301)
         raise HTTPException(status_code=404)
-    related = db.scalars(
+    related = _similar_products(db, product, 4)
+    bought_together = _bought_together_products(db, product, 4)
+    return render(
+        request,
+        db,
+        "product.html",
+        product=product,
+        related=related,
+        bought_together=bought_together,
+        **product_seo_context(request, product),
+    )
+
+
+@app.get("/product/{product_id}/diagram.svg", include_in_schema=False)
+def product_diagram(product_id: int, db: Session = Depends(get_db)):
+    product = db.scalar(
         select(Product)
-        .where(Product.category_id == product.category_id, Product.id != product.id, Product.is_active.is_(True))
-        .limit(4)
-        .options(selectinload(Product.images), selectinload(Product.brand), selectinload(Product.category))
-    ).all()
-    return render(request, db, "product.html", product=product, related=related, **product_seo_context(request, product))
+        .where(Product.id == product_id, Product.is_active.is_(True))
+        .options(
+            selectinload(Product.category),
+            selectinload(Product.bearing_spec),
+            selectinload(Product.belt_spec),
+            selectinload(Product.seal_spec),
+        )
+    )
+    if not product:
+        raise HTTPException(status_code=404)
+    kind = category_product_type(product.category)
+    size = product_size_label(product) or "Розмір не вказано"
+    safe_name = html.escape(product.name[:54])
+    safe_size = html.escape(size)
+    if kind in {"bearings", "seals"}:
+        shape = """
+        <circle cx="205" cy="137" r="84" fill="none" stroke="#7b92aa" stroke-width="18"/>
+        <circle cx="205" cy="137" r="39" fill="#f8fbff" stroke="#7b92aa" stroke-width="5"/>
+        <line x1="121" y1="42" x2="289" y2="42" stroke="#0d6efd" stroke-width="2"/>
+        <line x1="121" y1="34" x2="121" y2="50" stroke="#0d6efd" stroke-width="2"/>
+        <line x1="289" y1="34" x2="289" y2="50" stroke="#0d6efd" stroke-width="2"/>
+        <text x="205" y="29" text-anchor="middle" class="dim">D</text>
+        <line x1="166" y1="137" x2="244" y2="137" stroke="#0d6efd" stroke-width="2"/>
+        <text x="205" y="126" text-anchor="middle" class="dim">d</text>
+        """
+    elif kind == "belts":
+        shape = """
+        <path d="M118 70 H292 L264 206 H146 Z" fill="#eef4fb" stroke="#7b92aa" stroke-width="5"/>
+        <line x1="118" y1="45" x2="292" y2="45" stroke="#0d6efd" stroke-width="2"/>
+        <line x1="118" y1="37" x2="118" y2="53" stroke="#0d6efd" stroke-width="2"/>
+        <line x1="292" y1="37" x2="292" y2="53" stroke="#0d6efd" stroke-width="2"/>
+        <text x="205" y="31" text-anchor="middle" class="dim">Профіль</text>
+        """
+    else:
+        shape = '<rect x="110" y="55" width="190" height="150" rx="22" fill="#eef4fb" stroke="#7b92aa" stroke-width="5"/>'
+    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 410 320" role="img" aria-label="Схематичне зображення {safe_name}">
+    <style>text{{font-family:Arial,sans-serif;fill:#16324f}}.dim{{font-size:18px;font-weight:700;fill:#0d6efd}}.title{{font-size:17px;font-weight:700}}.size{{font-size:18px;font-weight:700}}</style>
+    <rect width="410" height="320" fill="#f7faff"/>{shape}
+    <text x="205" y="253" text-anchor="middle" class="title">{safe_name}</text>
+    <text x="205" y="280" text-anchor="middle" class="size">{safe_size}</text>
+    <text x="205" y="304" text-anchor="middle" font-size="12" fill="#718399">Схематичне зображення, не в масштабі</text>
+    </svg>"""
+    return Response(svg, media_type="image/svg+xml", headers={"Cache-Control": "public, max-age=3600"})
 
 
 @app.post("/cart/add/{product_id}")
@@ -1096,19 +1460,26 @@ def products_batch(ids: str = "", db: Session = Depends(get_db)):
     products = db.scalars(
         select(Product)
         .where(Product.id.in_(clean_ids), Product.is_active.is_(True))
-        .options(selectinload(Product.images), selectinload(Product.brand))
+        .options(*_product_card_options())
     ).all()
+    product_by_id = {product.id: product for product in products}
     payload = []
-    for product in products:
+    # Keep the same order as localStorage so the favourites page does not jump
+    # around after every reload.
+    for product_id in clean_ids:
+        product = product_by_id.get(product_id)
+        if not product:
+            continue
         payload.append(
             {
                 "id": product.id,
                 "name": product.name,
-                "brand": None if not product.brand or product.brand.name == "Без бренду" else product.brand.name,
+                "brand": product_display_brand(product),
+                "origin": product_origin_label(product),
                 "price": float(product.price),
-                "image": product.primary_image,
+                "image": product_media_url(product),
                 "url": f"/product/{product.slug}",
-                "manufacturer_code": product.manufacturer_code,
+                "size_label": product_size_label(product),
                 "availability_code": product.storefront_availability,
                 "availability": availability_label(product),
             }
@@ -1445,15 +1816,208 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db)):
     return render(request, db, "admin/dashboard.html", admin=admin, product_count=product_count, new_orders=new_orders, unpaid=unpaid)
 
 
+@app.get("/admin/categories", response_class=HTMLResponse)
+def admin_categories(request: Request, db: Session = Depends(get_db)):
+    require_admin(request, db)
+    counts = dict(
+        db.execute(select(Product.category_id, func.count(Product.id)).group_by(Product.category_id)).all()
+    )
+    return render(request, db, "admin/categories.html", category_product_counts=counts)
+
+
+@app.get("/admin/categories/new", response_class=HTMLResponse)
+def admin_category_new(request: Request, db: Session = Depends(get_db)):
+    require_admin(request, db)
+    return render(request, db, "admin/category_form.html", category=None, form_data={})
+
+
+@app.get("/admin/categories/{category_id}/edit", response_class=HTMLResponse)
+def admin_category_edit(category_id: int, request: Request, db: Session = Depends(get_db)):
+    require_admin(request, db)
+    category = db.get(Category, category_id)
+    if not category:
+        raise HTTPException(status_code=404)
+    return render(request, db, "admin/category_form.html", category=category, form_data={})
+
+
+def _category_parent_is_valid(db: Session, category: Category | None, parent: Category | None) -> bool:
+    if not category or not parent:
+        return True
+    if category.id == parent.id:
+        return False
+    descendants = set(category_descendant_ids(db, category, active_only=False))
+    return parent.id not in descendants
+
+
+@app.post("/admin/categories/save")
+async def admin_category_save(request: Request, db: Session = Depends(get_db)):
+    admin = require_admin(request, db)
+    form = await request.form()
+    verify_csrf(request, form)
+    category_id = as_int(str(form.get("category_id", "")))
+    category = db.get(Category, category_id) if category_id else None
+    if category_id and not category:
+        raise HTTPException(status_code=404)
+
+    name = str(form.get("name", "")).strip()
+    requested_code = str(form.get("code", "")).strip()
+    parent_id = as_int(str(form.get("parent_id", "")))
+    parent = db.get(Category, parent_id) if parent_id else None
+    product_type = normalize_category_code(str(form.get("product_type", "")).strip()) or "generic"
+    errors: list[str] = []
+    if len(name) < 2:
+        errors.append("Вкажіть назву категорії.")
+    if parent_id and not parent:
+        errors.append("Батьківську категорію не знайдено.")
+    if not _category_parent_is_valid(db, category, parent):
+        errors.append("Категорію не можна помістити всередину самої себе або її підкатегорії.")
+    if product_type not in PRODUCT_TYPE_LABELS:
+        errors.append("Невідомий тип характеристик товару.")
+    if parent:
+        product_type = category_product_type(parent)
+
+    code = category.code if category else make_unique_category_code(db, name, requested_code=requested_code or None)
+    if not category and requested_code:
+        existing = db.scalar(select(Category).where(Category.code == slugify(requested_code, max_length=60)))
+        if existing:
+            errors.append("Категорія з таким кодом уже існує.")
+
+    if errors:
+        return render(
+            request,
+            db,
+            "admin/category_form.html",
+            status_code=400,
+            category=category,
+            errors=errors,
+            form_data=dict(form),
+        )
+
+    is_new = category is None
+    if category is None:
+        category = Category(code=code, name=name)
+        db.add(category)
+        db.flush()
+    category.name = name
+    category.description = str(form.get("description", "")).strip() or None
+    category.parent_id = parent.id if parent else None
+    category.product_type = product_type
+    category.sort_order = as_int(str(form.get("sort_order", "100")), 100) or 100
+    category.is_active = form.get("is_active") == "1"
+    category.show_in_menu = form.get("show_in_menu") == "1"
+    category.require_prepayment = form.get("require_prepayment") == "1"
+    category.cod_allowed = form.get("cod_allowed") == "1"
+    audit(db, admin, "category_create" if is_new else "category_update", "category", category.id, category.name)
+    db.commit()
+    flash(request, "Категорію збережено.", "success")
+    return RedirectResponse("/admin/categories", status_code=303)
+
+
+@app.post("/admin/categories/{category_id}/toggle")
+async def admin_category_toggle(category_id: int, request: Request, db: Session = Depends(get_db)):
+    admin = require_admin(request, db)
+    form = await request.form()
+    verify_csrf(request, form)
+    category = db.get(Category, category_id)
+    if not category:
+        raise HTTPException(status_code=404)
+    category.is_active = not category.is_active
+    audit(db, admin, "category_toggle", "category", category.id, f"active={category.is_active}")
+    db.commit()
+    return RedirectResponse("/admin/categories", status_code=303)
+
+
+@app.post("/admin/categories/{category_id}/delete")
+async def admin_category_delete(category_id: int, request: Request, db: Session = Depends(get_db)):
+    admin = require_admin(request, db)
+    form = await request.form()
+    verify_csrf(request, form)
+    category = db.get(Category, category_id)
+    if not category:
+        raise HTTPException(status_code=404)
+    has_products = bool(db.scalar(select(Product.id).where(Product.category_id == category.id).limit(1)))
+    has_children = bool(db.scalar(select(Category.id).where(Category.parent_id == category.id).limit(1)))
+    if has_products or has_children:
+        flash(request, "Спочатку перенесіть товари та підкатегорії. Непорожню категорію видалити не можна.", "error")
+        return RedirectResponse("/admin/categories", status_code=303)
+    audit(db, admin, "category_delete", "category", category.id, category.name)
+    db.delete(category)
+    db.commit()
+    flash(request, "Категорію видалено.", "success")
+    return RedirectResponse("/admin/categories", status_code=303)
+
+
 @app.get("/admin/products", response_class=HTMLResponse)
 def admin_products(request: Request, db: Session = Depends(get_db)):
     require_admin(request, db)
+    params = request.query_params
+    q = (params.get("q") or "").strip()
+    category_id = as_int(params.get("category"))
+    status = (params.get("status") or "all").strip()
+    sort = (params.get("sort") or "newest").strip()
+    page = max(1, as_int(params.get("page"), 1) or 1)
+    per_page = as_int(params.get("per_page"), 50) or 50
+    if per_page not in {25, 50, 100, 200}:
+        per_page = 50
+
+    stmt = select(Product)
+    if q:
+        for term in [item for item in re.split(r"\s+", q) if item]:
+            pattern = f"%{term.lower()}%"
+            stmt = stmt.where(
+                or_(
+                    func.lower(Product.name).like(pattern),
+                    func.lower(Product.sku).like(pattern),
+                    func.lower(func.coalesce(Product.manufacturer_code, "")).like(pattern),
+                    func.lower(func.coalesce(Product.alternative_markings, "")).like(pattern),
+                    func.lower(func.coalesce(Product.manufacturing_country, "")).like(pattern),
+                    Product.brand.has(func.lower(Brand.name).like(pattern)),
+                )
+            )
+    if category_id:
+        selected_category = db.get(Category, category_id)
+        if selected_category:
+            stmt = stmt.where(Product.category_id.in_(category_descendant_ids(db, selected_category, active_only=False)))
+    if status == "active":
+        stmt = stmt.where(Product.is_active.is_(True))
+    elif status == "hidden":
+        stmt = stmt.where(Product.is_active.is_(False))
+
+    if sort == "name_asc":
+        stmt = stmt.order_by(Product.name.asc(), Product.id.desc())
+    elif sort == "name_desc":
+        stmt = stmt.order_by(Product.name.desc(), Product.id.desc())
+    elif sort == "price_asc":
+        stmt = stmt.order_by(Product.price.asc(), Product.id.desc())
+    elif sort == "price_desc":
+        stmt = stmt.order_by(Product.price.desc(), Product.id.desc())
+    elif sort == "stock_asc":
+        stmt = stmt.order_by(Product.stock_qty.asc(), Product.id.desc())
+    elif sort == "stock_desc":
+        stmt = stmt.order_by(Product.stock_qty.desc(), Product.id.desc())
+    elif sort == "updated":
+        stmt = stmt.order_by(Product.updated_at.desc(), Product.id.desc())
+    else:
+        stmt = stmt.order_by(Product.id.desc())
+
+    total = db.scalar(select(func.count()).select_from(stmt.order_by(None).subquery())) or 0
+    pages = max(1, (total + per_page - 1) // per_page)
+    page = min(page, pages)
     products = db.scalars(
-        select(Product)
-        .order_by(Product.id.desc())
-        .options(selectinload(Product.brand), selectinload(Product.category), selectinload(Product.images))
+        stmt.offset((page - 1) * per_page).limit(per_page).options(*_product_card_options())
     ).all()
-    return render(request, db, "admin/products.html", products=products)
+    return render(
+        request,
+        db,
+        "admin/products.html",
+        products=products,
+        total=total,
+        page=page,
+        pages=pages,
+        per_page=per_page,
+        pagination_items=pagination_items(page, pages),
+        admin_params=dict(params),
+    )
 
 
 @app.get("/admin/products/new", response_class=HTMLResponse)
@@ -1487,16 +2051,13 @@ def admin_product_edit(product_id: int, request: Request, db: Session = Depends(
 
 def validate_product_form(form: Any, category: Category) -> list[str]:
     errors: list[str] = []
-    kind = category_kind(category.code)
+    kind = category_product_type(category)
     name = str(form.get("name", "")).strip()
     price = as_decimal(str(form.get("price", "")))
-    brand_name = str(form.get("brand_name", "")).strip()
     if len(name) < 2:
         errors.append("Назва товару обов’язкова.")
     if price is None or price < 0:
         errors.append("Вкажіть коректну ціну.")
-    if kind in {"bearings", "belts", "seals", "lubricants"} and not brand_name:
-        errors.append("Для цієї категорії бренд обов’язковий.")
 
     if kind == "bearings":
         if any(as_decimal(str(form.get(key, ""))) is None for key in ("inner_diameter_mm", "outer_diameter_mm", "width_mm")):
@@ -1519,7 +2080,18 @@ def validate_product_form(form: Any, category: Category) -> list[str]:
 
 
 def set_product_spec(db: Session, product: Product, category: Category, form: Any) -> None:
-    kind = category_kind(category.code)
+    kind = category_product_type(category)
+    # A product can be moved between categories in the admin panel. Remove an
+    # old type-specific row so global searches cannot match stale dimensions.
+    if kind != "bearings" and product.bearing_spec is not None:
+        product.bearing_spec = None
+    if kind != "belts" and product.belt_spec is not None:
+        product.belt_spec = None
+    if kind != "seals" and product.seal_spec is not None:
+        product.seal_spec = None
+    if kind != "lubricants" and product.lubricant_spec is not None:
+        product.lubricant_spec = None
+
     if kind == "bearings":
         spec = product.bearing_spec or BearingSpec(product_id=product.id)
         spec.subtype = str(form.get("subtype", "")).strip() or None
@@ -1527,6 +2099,9 @@ def set_product_spec(db: Session, product: Product, category: Category, form: An
         spec.outer_diameter_mm = as_decimal(str(form.get("outer_diameter_mm", "")))
         spec.width_mm = as_decimal(str(form.get("width_mm", "")))
         spec.rows = as_int(str(form.get("rows", "")))
+        spec.rolling_element = str(form.get("rolling_element", "")).strip() or None
+        spec.construction = str(form.get("construction", "")).strip() or None
+        spec.series_type = str(form.get("series_type", "")).strip().upper() or None
         spec.cage_type = str(form.get("cage_type", "")).strip() or None
         spec.seal_type = str(form.get("bearing_seal_type", "")).strip() or None
         spec.clearance = str(form.get("clearance", "")).strip() or None
@@ -1535,9 +2110,10 @@ def set_product_spec(db: Session, product: Product, category: Category, form: An
     elif kind == "belts":
         spec = product.belt_spec or BeltSpec(product_id=product.id)
         spec.belt_type = str(form.get("belt_type", "")).strip() or None
-        spec.profile = str(form.get("profile", "")).strip() or None
+        spec.profile = normalize_belt_profile(str(form.get("profile", "")))
         spec.length_mm = as_decimal(str(form.get("length_mm", "")))
         spec.width_mm = as_decimal(str(form.get("belt_width_mm", "")))
+        spec.ribs = as_int(str(form.get("ribs", "")))
         product.belt_spec = spec
     elif kind == "seals":
         spec = product.seal_spec or SealSpec(product_id=product.id)
@@ -1608,11 +2184,11 @@ async def admin_product_save(request: Request, db: Session = Depends(get_db)):
     is_new = product is None
     if product is None:
         product = Product(
-            sku=str(form.get("sku", "")).strip() or generate_sku(db, category.code),
+            sku=str(form.get("sku", "")).strip() or generate_sku(db, category.product_type),
             slug="temporary",
             name=str(form.get("name", "")).strip(),
             category_id=category.id,
-            brand_id=brand.id,
+            brand_id=brand.id if brand else None,
             price=as_decimal(str(form.get("price", "")), Decimal("0.00")) or Decimal("0.00"),
         )
         db.add(product)
@@ -1628,7 +2204,7 @@ async def admin_product_save(request: Request, db: Session = Depends(get_db)):
 
     product.name = str(form.get("name", "")).strip()
     product.category_id = category.id
-    product.brand_id = brand.id
+    product.brand_id = brand.id if brand else None
     product.manufacturer_code = str(form.get("manufacturer_code", "")).strip() or None
     product.alternative_markings = normalize_alternative_markings(
         str(form.get("alternative_markings", "")), product.manufacturer_code
@@ -1641,6 +2217,7 @@ async def admin_product_save(request: Request, db: Session = Depends(get_db)):
     product.stock_qty = max(0, as_int(str(form.get("stock_qty", "0")), 0) or 0)
     product.availability_status = str(form.get("availability_status", "in_stock")) if not product.stock_is_tracked else ("in_stock" if product.stock_qty > 0 else "out_of_stock")
     product.is_active = form.get("is_active") == "1"
+    product.is_featured = form.get("is_featured") == "1"
     prepayment_override = str(form.get("require_prepayment_override", "")).strip()
     cod_override = str(form.get("cod_allowed_override", "")).strip()
     product.require_prepayment_override = True if prepayment_override == "1" else (False if prepayment_override == "0" else None)
@@ -1651,7 +2228,7 @@ async def admin_product_save(request: Request, db: Session = Depends(get_db)):
         product.slug = make_unique_product_slug(
             db,
             product.name,
-            brand.name,
+            brand.name if brand else None,
             product.manufacturer_code,
             product_id=product.id,
             requested_slug=requested_slug or None,
@@ -1661,7 +2238,7 @@ async def admin_product_save(request: Request, db: Session = Depends(get_db)):
         product.slug = make_unique_product_slug(
             db,
             product.name,
-            brand.name,
+            brand.name if brand else None,
             product.manufacturer_code,
             product_id=product.id,
             requested_slug=requested_slug,

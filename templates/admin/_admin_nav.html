@@ -3,6 +3,7 @@
   <nav>
     <a href="/admin" class="{% if request.url.path == '/admin' %}active{% endif %}">Огляд</a>
     <a href="/admin/products" class="{% if '/admin/products' in request.url.path %}active{% endif %}">Товари</a>
+    <a href="/admin/categories" class="{% if '/admin/categories' in request.url.path %}active{% endif %}">Категорії</a>
     <a href="/admin/orders" class="{% if '/admin/orders' in request.url.path %}active{% endif %}">Замовлення</a>
     <a href="/admin/settings" class="{% if '/admin/settings' in request.url.path %}active{% endif %}">Доставка й оплата</a>
   </nav>

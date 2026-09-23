@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+{% block title %}Категорії — TopBearing Admin{% endblock %}
+{% block content %}
+<section class="container page-shell admin-shell">
+  <div class="page-heading">
+    <div><span class="eyebrow">Адмін-панель</span><h1>Категорії каталогу</h1></div>
+    <a class="primary-button" href="/admin/categories/new">+ Додати категорію</a>
+  </div>
+  <nav class="admin-nav">
+    <a href="/admin">Огляд</a><a href="/admin/products">Товари</a><a class="active" href="/admin/categories">Категорії</a><a href="/admin/orders">Замовлення</a><a href="/admin/settings">Налаштування</a>
+  </nav>
+
+  <div class="panel">
+    <p class="muted">Категорії керуються з бази даних. Після збереження активна категорія з увімкненим «Показувати в каталозі» автоматично з’являється у меню магазину. Тип характеристик підкатегорії успадковується від батьківської категорії.</p>
+  </div>
+
+  {% macro category_row(category, level=0) -%}
+    <tr>
+      <td>
+        <div class="category-admin-name" style="--category-level: {{ level }}">
+          {% if level %}<span class="category-tree-mark">↳</span>{% endif %}
+          <div><strong>{{ category.name or category.code }}</strong><small>{{ category.code }}</small></div>
+        </div>
+      </td>
+      <td>{{ product_type_labels.get(category.product_type, category.product_type) }}</td>
+      <td>{{ category_product_counts.get(category.id, 0) }}</td>
+      <td>{{ 'Так' if category.show_in_menu else 'Ні' }}</td>
+      <td><span class="status-pill {{ 'status-shipped' if category.is_active else 'status-cancelled' }}">{{ 'Активна' if category.is_active else 'Вимкнена' }}</span></td>
+      <td>
+        <div class="row-actions">
+          <a href="/admin/categories/{{ category.id }}/edit">Редагувати</a>
+          <form method="post" action="/admin/categories/{{ category.id }}/toggle"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="link-button" type="submit">{{ 'Вимкнути' if category.is_active else 'Увімкнути' }}</button></form>
+          {% if category_product_counts.get(category.id, 0) == 0 and not category_children.get(category.id) %}
+          <form method="post" action="/admin/categories/{{ category.id }}/delete" onsubmit="return confirm('Видалити категорію?');"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="link-button danger-link" type="submit">Видалити</button></form>
+          {% endif %}
+        </div>
+      </td>
+    </tr>
+    {% for child in category_children.get(category.id, []) %}{{ category_row(child, level + 1) }}{% endfor %}
+  {%- endmacro %}
+
+  <div class="panel table-panel">
+    <div class="orders-table-wrap">
+      <table class="data-table category-admin-table">
+        <thead><tr><th>Категорія</th><th>Тип товару</th><th>Товарів</th><th>У меню</th><th>Стан</th><th></th></tr></thead>
+        <tbody>
+          {% for category in root_categories %}{{ category_row(category) }}{% else %}<tr><td colspan="6">Категорій поки немає.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+{% endblock %}

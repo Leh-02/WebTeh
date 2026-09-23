@@ -1,9 +1,15 @@
 {% extends 'base.html' %}
-{% block title %}Каталог — TopBearing{% endblock %}
+{% block title %}{{ active_category_obj.name if active_category_obj else 'Каталог' }} — TopBearing{% endblock %}
 {% block content %}
+{% macro category_options(items, level=0) -%}
+  {% for category in items %}
+    <option value="{{ category.code }}" data-kind="{{ category.product_type }}" {% if active_category == category.code %}selected{% endif %}>{{ '— ' * level }}{{ category.name or category.code }}</option>
+    {{ category_options(category_children.get(category.id, []), level + 1) }}
+  {% endfor %}
+{%- endmacro %}
 <section class="container catalog-page">
-  <div class="breadcrumbs"><a href="/">Головна</a><span>/</span><span>Каталог</span></div>
-  <div class="catalog-title-row"><div><h1>Каталог</h1><p>Знайдено товарів: {{ total }}</p></div></div>
+  <div class="breadcrumbs"><a href="/">Головна</a><span>/</span>{% if active_category_obj and active_category_obj.parent %}<a href="/catalog/{{ active_category_obj.parent.code }}">{{ active_category_obj.parent.name }}</a><span>/</span>{% endif %}<span>{{ active_category_obj.name if active_category_obj else 'Каталог' }}</span></div>
+  <div class="catalog-title-row"><div><h1>{{ active_category_obj.name if active_category_obj else 'Каталог' }}</h1><p>Знайдено товарів: {{ total }}</p></div></div>
 
   <div class="mobile-filter-bar mobile-only"><button type="button" class="secondary-button" data-filter-open>Фільтри</button><select data-sort-select aria-label="Сортування"><option value="relevance" {% if params.get('sort','relevance')=='relevance' %}selected{% endif %}>За релевантністю</option><option value="newest" {% if params.get('sort')=='newest' %}selected{% endif %}>Новіші</option><option value="price_asc" {% if params.get('sort')=='price_asc' %}selected{% endif %}>Ціна ↑</option><option value="price_desc" {% if params.get('sort')=='price_desc' %}selected{% endif %}>Ціна ↓</option></select></div>
 
@@ -13,37 +19,53 @@
       <form action="/catalog" method="get" class="filters-form" data-filter-form>
         {% if params.get('q') %}<input type="hidden" name="q" value="{{ params.get('q') }}">{% endif %}
         <input type="hidden" name="sort" value="{{ params.get('sort','relevance') }}" data-sort-hidden>
-        <label>Категорія<select name="category" data-category-filter><option value="">Усі категорії</option>{% for category in categories %}<option value="{{ category.code }}" data-kind="{{ category.code|category_kind }}" {% if active_category == (category.code|category_kind) %}selected{% endif %}>{{ category.name or category.code }}</option>{% endfor %}</select></label>
-        <label>Бренд<select name="brand"><option value="">Усі бренди</option>{% for brand in brands %}{% if brand.name != 'Без бренду' %}<option value="{{ brand.id }}" {% if params.get('brand') == brand.id|string %}selected{% endif %}>{{ brand.name }}</option>{% endif %}{% endfor %}</select></label>
+        <input type="hidden" name="per_page" value="{{ per_page }}">
+        <label>Категорія<select name="category" data-category-filter><option value="" data-kind="">Усі категорії</option>{{ category_options(root_categories) }}</select></label>
+        <label data-brand-filter-wrap class="{% if not brands %}hidden{% endif %}">Бренд<select name="brand" data-brand-filter><option value="">Усі бренди</option>{% for brand in brands %}<option value="{{ brand.id }}" {% if params.get('brand') == brand.id|string %}selected{% endif %}>{{ brand.name }}</option>{% endfor %}</select></label>
 
         <div class="filter-group" data-filter-group="bearings">
           <h3>Підшипники</h3>
-          <label>Тип<input name="subtype" value="{{ params.get('subtype','') }}" placeholder="радіальний, сферичний..."></label>
+          <label>Тип / уточнення<input name="subtype" value="{{ params.get('subtype','') }}" placeholder="Наприклад: сферичний"></label>
           <div class="range-row"><label>d від<input inputmode="decimal" name="inner_min" value="{{ params.get('inner_min','') }}"></label><label>d до<input inputmode="decimal" name="inner_max" value="{{ params.get('inner_max','') }}"></label></div>
           <div class="range-row"><label>D від<input inputmode="decimal" name="outer_min" value="{{ params.get('outer_min','') }}"></label><label>D до<input inputmode="decimal" name="outer_max" value="{{ params.get('outer_max','') }}"></label></div>
+          <div class="range-row"><label>B від<input inputmode="decimal" name="width_min" value="{{ params.get('width_min','') }}"></label><label>B до<input inputmode="decimal" name="width_max" value="{{ params.get('width_max','') }}"></label></div>
+          <div class="range-row"><label>Рядів<input inputmode="numeric" name="rows" value="{{ params.get('rows','') }}" placeholder="1 або 2"></label><label>Серія<input name="series_type" value="{{ params.get('series_type','') }}" placeholder="NU, NJ..."></label></div>
         </div>
 
         <div class="filter-group" data-filter-group="belts">
-          <h3>Ремені</h3><label>Профіль<input name="profile" value="{{ params.get('profile','') }}" placeholder="A, B, SPZ..."></label><div class="range-row"><label>Довжина від<input inputmode="decimal" name="length_min" value="{{ params.get('length_min','') }}"></label><label>до<input inputmode="decimal" name="length_max" value="{{ params.get('length_max','') }}"></label></div>
+          <h3>Ремені</h3>
+          <label>Профіль<input name="profile" value="{{ params.get('profile','') }}" placeholder="A, B, SPZ, 6PK..."></label>
+          <div class="range-row"><label>Довжина від<input inputmode="decimal" name="length_min" value="{{ params.get('length_min','') }}"></label><label>до<input inputmode="decimal" name="length_max" value="{{ params.get('length_max','') }}"></label></div>
         </div>
 
         <div class="filter-group" data-filter-group="seals">
-          <h3>Сальники</h3><label>Матеріал<input name="material" value="{{ params.get('material','') }}" placeholder="NBR, FKM..."></label>
+          <h3>Сальники та манжети</h3>
+          <div class="range-row"><label>d від<input inputmode="decimal" name="inner_min" value="{{ params.get('inner_min','') }}"></label><label>d до<input inputmode="decimal" name="inner_max" value="{{ params.get('inner_max','') }}"></label></div>
+          <div class="range-row"><label>D від<input inputmode="decimal" name="outer_min" value="{{ params.get('outer_min','') }}"></label><label>D до<input inputmode="decimal" name="outer_max" value="{{ params.get('outer_max','') }}"></label></div>
+          <div class="range-row"><label>Ширина від<input inputmode="decimal" name="width_min" value="{{ params.get('width_min','') }}"></label><label>до<input inputmode="decimal" name="width_max" value="{{ params.get('width_max','') }}"></label></div>
         </div>
 
-        <div class="filter-group" data-filter-group="lubricants">
-          <h3>Змащення</h3><label>В'язкість / клас<input name="viscosity" value="{{ params.get('viscosity','') }}" placeholder="NLGI 2, ISO VG 68..."></label>
-        </div>
+        <div class="filter-group" data-filter-group="lubricants"><h3>Змащення</h3><label>В'язкість / клас<input name="viscosity" value="{{ params.get('viscosity','') }}" placeholder="NLGI 2, ISO VG 68..."></label></div>
 
         <div class="filter-actions"><button class="primary-button" type="submit">Застосувати</button><a class="text-button" href="/catalog{% if params.get('q') %}?q={{ params.get('q')|urlencode }}{% endif %}">Скинути</a></div>
       </form>
     </aside>
 
     <div class="catalog-results">
-      <div class="catalog-toolbar desktop-only"><span>{{ total }} позицій</span><label>Сортування<select data-sort-select><option value="relevance" {% if params.get('sort','relevance')=='relevance' %}selected{% endif %}>За релевантністю</option><option value="newest" {% if params.get('sort')=='newest' %}selected{% endif %}>Новіші</option><option value="price_asc" {% if params.get('sort')=='price_asc' %}selected{% endif %}>Від дешевших</option><option value="price_desc" {% if params.get('sort')=='price_desc' %}selected{% endif %}>Від дорожчих</option></select></label></div>
+      <div class="catalog-toolbar desktop-only">
+        <span>{{ total }} позицій</span>
+        <div class="catalog-toolbar-controls">
+          <label>На сторінці<select data-per-page-select>{% for value in [24,50,100,200] %}<option value="{{ value }}" {% if per_page == value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+          <label>Сортування<select data-sort-select><option value="relevance" {% if params.get('sort','relevance')=='relevance' %}selected{% endif %}>За релевантністю</option><option value="newest" {% if params.get('sort')=='newest' %}selected{% endif %}>Новіші</option><option value="price_asc" {% if params.get('sort')=='price_asc' %}selected{% endif %}>Від дешевших</option><option value="price_desc" {% if params.get('sort')=='price_desc' %}selected{% endif %}>Від дорожчих</option></select></label>
+        </div>
+      </div>
       {% if products %}<div class="product-grid catalog-grid">{% for product in products %}{% include '_product_card.html' %}{% endfor %}</div>{% else %}<div class="empty-state"><div class="empty-icon">⌕</div><h2>Нічого не знайдено</h2><p>Спробуйте інший номер, бренд або формат розміру.</p><a class="primary-button" href="/catalog">Очистити фільтри</a></div>{% endif %}
 
-      {% if pages > 1 %}<nav class="pagination" aria-label="Сторінки">{% for p in range(1, pages+1) %}<a class="{% if p == page %}active{% endif %}" href="?{% for k,v in params.items() if k != 'page' %}{{ k }}={{ v|urlencode }}&{% endfor %}page={{ p }}">{{ p }}</a>{% endfor %}</nav>{% endif %}
+      {% if pages > 1 %}<nav class="pagination" aria-label="Сторінки">
+        {% if page > 1 %}<a href="?{% for k,v in params.items() if k not in ['page','per_page'] %}{{ k }}={{ v|urlencode }}&{% endfor %}per_page={{ per_page }}&page={{ page-1 }}" aria-label="Попередня">←</a>{% endif %}
+        {% for p in pagination_items %}{% if p is none %}<span class="pagination-gap">…</span>{% else %}<a class="{% if p == page %}active{% endif %}" href="?{% for k,v in params.items() if k not in ['page','per_page'] %}{{ k }}={{ v|urlencode }}&{% endfor %}per_page={{ per_page }}&page={{ p }}">{{ p }}</a>{% endif %}{% endfor %}
+        {% if page < pages %}<a href="?{% for k,v in params.items() if k not in ['page','per_page'] %}{{ k }}={{ v|urlencode }}&{% endfor %}per_page={{ per_page }}&page={{ page+1 }}" aria-label="Наступна">→</a>{% endif %}
+      </nav>{% endif %}
     </div>
   </div>
 </section>

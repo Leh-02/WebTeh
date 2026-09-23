@@ -39,7 +39,41 @@
         <span class="brand-mark">TB</span><span class="brand-name">TopBearing</span>
       </a>
       <nav class="desktop-nav desktop-only" aria-label="Основна навігація">
-        <a href="/catalog">Каталог</a>
+        <div class="desktop-catalog-menu" data-desktop-catalog>
+          <a href="/catalog" class="catalog-menu-trigger">Каталог <span aria-hidden="true">⌄</span></a>
+          <div class="catalog-mega-menu" aria-label="Каталог товарів">
+            <div class="catalog-menu-rail">
+              <a class="catalog-all-link" href="/catalog">Усі товари <span aria-hidden="true">→</span></a>
+              <div class="catalog-root-list">
+                {% for category in root_categories %}
+                <div class="catalog-menu-item{% if loop.first %} active{% endif %}" data-catalog-root>
+                  <a class="catalog-root-link" href="/catalog/{{ category.code }}">
+                    <span>{{ category.name or category.code }}</span>
+                    {% if category_children.get(category.id) %}<span class="catalog-root-arrow" aria-hidden="true">›</span>{% endif %}
+                  </a>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+            <div class="catalog-submenu-stage">
+              {% for category in root_categories %}
+              <section class="catalog-submenu-panel{% if loop.first %} active{% endif %}" data-catalog-panel aria-label="{{ category.name or category.code }}">
+                <div class="catalog-submenu-heading">
+                  <strong>{{ category.name or category.code }}</strong>
+                  <a href="/catalog/{{ category.code }}">Переглянути все →</a>
+                </div>
+                {% if category_children.get(category.id) %}
+                <div class="catalog-child-links">
+                  {% for child in category_children.get(category.id, []) %}<a href="/catalog/{{ child.code }}">{{ child.name or child.code }}</a>{% endfor %}
+                </div>
+                {% else %}
+                <p class="catalog-submenu-empty">У цій категорії немає підкатегорій. Відкрийте її, щоб переглянути товари.</p>
+                {% endif %}
+              </section>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
         <a href="/favorites">Обране <span class="nav-count" data-favorites-count>0</span></a>
         <a href="/contacts">Контакти</a>
         {% if current_user %}
@@ -78,7 +112,10 @@
           <summary>Каталог</summary>
           <div class="mobile-nav-submenu">
             <a href="/catalog">Усі товари</a>
-            {% for category in categories %}<a href="/catalog/{{ category.code }}">{{ category.name or category.code }}</a>{% endfor %}
+            {% for category in root_categories %}
+              <a class="mobile-category-root" href="/catalog/{{ category.code }}">{{ category.name or category.code }}</a>
+              {% for child in category_children.get(category.id, []) %}<a class="mobile-category-child" href="/catalog/{{ child.code }}">↳ {{ child.name or child.code }}</a>{% endfor %}
+            {% endfor %}
           </div>
         </details>
         <a href="/favorites">Обране <span data-favorites-count>0</span></a>
@@ -121,7 +158,7 @@
       </div>
       <div><strong>Покупцям</strong><a href="/catalog">Каталог</a><a href="/contacts">Доставка та контакти</a><a href="/favorites">Обране</a></div>
       {% set footer_tg_url = telegram_href(settings.contact_telegram) %}{% set footer_vb_url = viber_href(settings.contact_viber) %}
-      <div><strong>Контакти</strong>{% if settings.contact_phone %}<a href="tel:{{ settings.contact_phone|replace(' ', '') }}">{{ settings.contact_phone }}</a>{% endif %}{% if settings.contact_email %}<a href="mailto:{{ settings.contact_email }}">{{ settings.contact_email }}</a>{% endif %}{% if footer_tg_url %}<a href="{{ footer_tg_url }}" rel="noopener noreferrer">Telegram</a>{% endif %}{% if footer_vb_url %}<a href="{{ footer_vb_url }}" rel="noopener noreferrer">Viber</a>{% endif %}{% if settings.contact_address %}<span>{{ settings.contact_address }}</span>{% endif %}</div>
+      <div><strong>Контакти</strong>{% if settings.contact_phone %}<a href="tel:{{ settings.contact_phone|replace(' ', '') }}">{{ settings.contact_phone }}</a>{% endif %}{% if settings.contact_email %}<a href="mailto:{{ settings.contact_email }}">{{ settings.contact_email }}</a>{% endif %}{% if footer_tg_url %}<a href="{{ footer_tg_url }}" rel="noopener noreferrer">Telegram</a>{% endif %}{% if footer_vb_url %}<a href="{{ footer_vb_url }}" rel="noopener noreferrer">Viber</a>{% endif %}<span>м. Полтава</span>{% if settings.contact_address %}<span>{{ settings.contact_address }}</span>{% endif %}</div>
     </div>
     <div class="container footer-note">{{ settings.shipping_notice }}</div>
   </footer>

@@ -20,6 +20,25 @@
   document.querySelector("[data-menu-close]")?.addEventListener("click", () => setMenu(false));
   menuBackdrop?.addEventListener("click", () => setMenu(false));
 
+  // ---------------- Desktop catalogue hierarchy ----------------
+  // Keep one root category active while the pointer moves into the second
+  // pane. This avoids the disappearing-menu problem caused by hover gaps and
+  // makes the hierarchy easier to scan.
+  const desktopCatalog = document.querySelector("[data-desktop-catalog]");
+  if (desktopCatalog) {
+    const roots = [...desktopCatalog.querySelectorAll("[data-catalog-root]")];
+    const panels = [...desktopCatalog.querySelectorAll("[data-catalog-panel]")];
+    const activateCatalogRoot = index => {
+      roots.forEach((item, i) => item.classList.toggle("active", i === index));
+      panels.forEach((panel, i) => panel.classList.toggle("active", i === index));
+    };
+    roots.forEach((root, index) => {
+      root.addEventListener("pointerenter", () => activateCatalogRoot(index));
+      root.addEventListener("focusin", () => activateCatalogRoot(index));
+    });
+    if (roots.length) activateCatalogRoot(0);
+  }
+
   // ---------------- Catalog filter drawer + sticky bar ----------------
   const filterPanel = document.querySelector("[data-filter-panel]");
   const filterBackdrop = document.querySelector("[data-filter-backdrop]");
@@ -40,7 +59,6 @@
   });
 
   const filterForm = document.querySelector("[data-filter-form]");
-  let filterTimer = null;
 
   function syncCatalogGroups({ clearHidden = false } = {}) {
     if (!filterForm) return;
@@ -49,43 +67,58 @@
     filterForm.querySelectorAll("[data-filter-group]").forEach(group => {
       const active = Boolean(kind) && group.dataset.filterGroup === kind;
       group.classList.toggle("hidden", !active);
-      if (clearHidden && !active) {
-        group.querySelectorAll("input, select").forEach(control => {
-          if (control instanceof HTMLInputElement || control instanceof HTMLSelectElement) control.value = "";
-        });
-      }
+      group.querySelectorAll("input, select").forEach(control => {
+        if (!(control instanceof HTMLInputElement || control instanceof HTMLSelectElement)) return;
+        control.disabled = !active;
+        if (clearHidden && !active) control.value = "";
+      });
     });
   }
 
-  function submitFilters(delay = 0) {
-    if (!filterForm) return;
-    window.clearTimeout(filterTimer);
-    filterTimer = window.setTimeout(() => {
-      const pageField = filterForm.querySelector('input[name="page"]');
-      if (pageField) pageField.remove();
-      filterForm.requestSubmit();
-    }, delay);
+  // Filter values are deliberately NOT submitted while the customer is typing.
+  // Category changes only switch the visible parameter group; the request is
+  // made by the explicit “Застосувати” button (or Enter in the form).
+  const categoryFilter = filterForm?.querySelector("[data-category-filter]");
+  const brandFilterWrap = filterForm?.querySelector("[data-brand-filter-wrap]");
+  const brandFilter = filterForm?.querySelector("[data-brand-filter]");
+
+  async function refreshBrandOptions(categoryCode) {
+    if (!brandFilter || !brandFilterWrap) return;
+    const previous = brandFilter.value;
+    try {
+      const url = new URL("/api/catalog/brands", window.location.origin);
+      if (categoryCode) url.searchParams.set("category", categoryCode);
+      const response = await fetch(url.toString(), { headers: { Accept: "application/json" }, credentials: "same-origin" });
+      if (!response.ok) throw new Error("brands request failed");
+      const brands = await response.json();
+      brandFilter.replaceChildren(new Option("Усі бренди", ""));
+      brands.forEach(brand => brandFilter.add(new Option(brand.name, String(brand.id))));
+      if (brands.some(brand => String(brand.id) === previous)) brandFilter.value = previous;
+      brandFilterWrap.classList.toggle("hidden", brands.length === 0);
+    } catch (_error) {
+      // A dependent-filter refresh must never block the main catalogue form.
+    }
   }
 
-  const categoryFilter = filterForm?.querySelector("[data-category-filter]");
   categoryFilter?.addEventListener("change", () => {
     syncCatalogGroups({ clearHidden: true });
-    submitFilters(0);
+    refreshBrandOptions(categoryFilter.value);
   });
   syncCatalogGroups();
-
-  filterForm?.querySelectorAll("select:not([data-category-filter])").forEach(select => {
-    select.addEventListener("change", () => submitFilters(0));
-  });
-  filterForm?.querySelectorAll('input:not([type="hidden"])').forEach(input => {
-    input.addEventListener("input", () => submitFilters(450));
-    input.addEventListener("change", () => submitFilters(0));
-  });
 
   document.querySelectorAll("[data-sort-select]").forEach(select => {
     select.addEventListener("change", () => {
       const url = new URL(window.location.href);
       url.searchParams.set("sort", select.value);
+      url.searchParams.delete("page");
+      window.location.assign(url.toString());
+    });
+  });
+
+  document.querySelectorAll("[data-per-page-select]").forEach(select => {
+    select.addEventListener("change", () => {
+      const url = new URL(window.location.href);
+      url.searchParams.set("per_page", select.value);
       url.searchParams.delete("page");
       window.location.assign(url.toString());
     });
@@ -235,10 +268,10 @@
         if (input) input.required = true;
       });
       if (brandInput) {
-        brandInput.required = kind !== "accessories";
-        brandInput.placeholder = kind === "accessories" ? "Необов’язково" : "Наприклад FAG";
+        brandInput.required = false;
+        brandInput.placeholder = "Необов’язково, наприклад FAG";
       }
-      if (brandRequiredMark) brandRequiredMark.classList.toggle("hidden", kind === "accessories");
+      if (brandRequiredMark) brandRequiredMark.classList.add("hidden");
       if (descriptionHint) {
         descriptionHint.textContent = (kind === "lubricants" || kind === "accessories")
           ? "— обов’язковий для цієї категорії"
@@ -262,6 +295,22 @@
     stockTracked?.addEventListener("change", syncStock);
     syncCategory();
     syncStock();
+  }
+
+  // ---------------- Admin category form ----------------
+  const categoryForm = document.querySelector("[data-category-admin-form]");
+  if (categoryForm) {
+    const parentSelect = categoryForm.querySelector("[data-category-parent]");
+    const typeSelect = categoryForm.querySelector("[data-category-product-type]");
+    const inheritedHint = categoryForm.querySelector("[data-category-type-hint]");
+    function syncCategoryType() {
+      const option = parentSelect?.selectedOptions?.[0];
+      const inherited = option?.dataset?.productType || "";
+      if (inherited && typeSelect) typeSelect.value = inherited;
+      if (inheritedHint) inheritedHint.hidden = !inherited;
+    }
+    parentSelect?.addEventListener("change", syncCategoryType);
+    syncCategoryType();
   }
 
   // ---------------- Product image gallery ----------------
@@ -367,11 +416,11 @@
           </a>
           <div class="product-card-body">
             <div class="product-card-topline">
-              ${product.brand ? `<span class="product-brand">${escapeHtml(product.brand)}</span>` : `<span></span>`}
+              ${(product.brand || product.origin) ? `<span class="product-brand">${escapeHtml(product.brand || product.origin)}</span>` : `<span></span>`}
               <button class="favorite-btn active" type="button" data-favorite-button data-product-id="${Number(product.id)}" aria-label="Прибрати з обраного">♥</button>
             </div>
             <a class="product-card-title" href="${escapeHtml(product.url)}">${escapeHtml(product.name)}</a>
-            ${product.manufacturer_code ? `<div class="product-code">Маркування: ${escapeHtml(product.manufacturer_code)}</div>` : ""}
+            ${product.size_label ? `<div class="product-code">Розмір: ${escapeHtml(product.size_label)}</div>` : ""}
             <div class="availability availability-${escapeHtml(product.availability_code)}">${escapeHtml(product.availability)}</div>
             <div class="product-card-bottom"><strong class="product-price">${formatMoney(product.price)} грн</strong><a class="small-primary" href="${escapeHtml(product.url)}">Переглянути</a></div>
           </div>

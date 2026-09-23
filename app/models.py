@@ -28,11 +28,22 @@ class Category(Base):
     code: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
     name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    parent_id: Mapped[int | None] = mapped_column(
+        ForeignKey("categories.id", ondelete="RESTRICT"), index=True, nullable=True
+    )
+    product_type: Mapped[str] = mapped_column(String(32), default="generic", index=True, nullable=False)
+    show_in_menu: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
     require_prepayment: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     cod_allowed: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     products: Mapped[list["Product"]] = relationship(back_populates="category")
+    parent: Mapped["Category | None"] = relationship(
+        remote_side="Category.id", back_populates="children", foreign_keys=[parent_id]
+    )
+    children: Mapped[list["Category"]] = relationship(
+        back_populates="parent", foreign_keys=[parent_id], order_by="Category.sort_order"
+    )
 
 
 class Brand(Base):
@@ -64,6 +75,7 @@ class Product(Base):
     stock_is_tracked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     availability_status: Mapped[str] = mapped_column(String(32), default="in_stock", nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_featured: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime | None] = mapped_column(DateTime, default=datetime.utcnow, nullable=True)
     updated_at: Mapped[datetime | None] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=True
@@ -134,6 +146,9 @@ class BearingSpec(Base):
     outer_diameter_mm: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True, index=True)
     width_mm: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True, index=True)
     rows: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rolling_element: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    construction: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    series_type: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
     cage_type: Mapped[str | None] = mapped_column(String(120), nullable=True)
     seal_type: Mapped[str | None] = mapped_column(String(120), nullable=True)
     clearance: Mapped[str | None] = mapped_column(String(80), nullable=True)
@@ -148,6 +163,7 @@ class BeltSpec(Base):
     profile: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
     length_mm: Mapped[Decimal | None] = mapped_column(Numeric(12, 3), nullable=True, index=True)
     width_mm: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+    ribs: Mapped[int | None] = mapped_column(Integer, nullable=True)
     product: Mapped["Product"] = relationship(back_populates="belt_spec")
 
 

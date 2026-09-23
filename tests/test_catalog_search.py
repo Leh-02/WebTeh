@@ -35,3 +35,11 @@ def test_search_finds_product_by_alternative_marking():
 def test_bearing_only_filter_is_ignored_for_belts_category():
     sql = str(build_catalog_statement(category_code="belts", subtype="radial")).lower()
     assert "bearing_specs.subtype" not in sql
+
+
+def test_belt_profile_normalizes_cyrillic_lookalikes():
+    from app.services.catalog import normalize_belt_profile
+
+    assert normalize_belt_profile(" в ") == "B"
+    assert normalize_belt_profile("6 рк") == "6PK"
+    assert normalize_belt_profile("spz-1000") == "SPZ1000"

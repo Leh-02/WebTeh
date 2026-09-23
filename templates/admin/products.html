@@ -1,7 +1,61 @@
 {% extends 'base.html' %}
 {% block title %}Товари — TopBearing Admin{% endblock %}
 {% block content %}
-<section class="container page-shell admin-shell"><div class="page-heading"><div><span class="eyebrow">Адмін-панель</span><h1>Товари</h1></div><a class="primary-button" href="/admin/products/new">+ Додати товар</a></div>
-<nav class="admin-nav"><a href="/admin">Огляд</a><a class="active" href="/admin/products">Товари</a><a href="/admin/orders">Замовлення</a><a href="/admin/settings">Налаштування</a></nav>
-<div class="panel table-panel"><div class="orders-table-wrap"><table class="data-table product-admin-table"><thead><tr><th>Товар</th><th>Категорія</th><th>Бренд</th><th>Ціна</th><th>Наявність</th><th>Стан</th><th></th></tr></thead><tbody>{% for product in products %}<tr><td><div class="admin-product-cell">{% if product.primary_image %}<img src="{{ product.primary_image }}" alt="">{% else %}<span class="mini-placeholder">TB</span>{% endif %}<div><strong>{{ product.name }}</strong><small>{{ product.manufacturer_code or product.sku }}</small></div></div></td><td>{{ product.category.name or product.category.code }}</td><td>{{ product.brand.name if product.brand and product.brand.name != 'Без бренду' else '—' }}</td><td>{{ product.price|money }} грн</td><td>{{ availability_label(product) }}{% if product.stock_is_tracked %}<small class="admin-only-stock"> ({{ product.stock_qty }} шт.)</small>{% endif %}</td><td><span class="status-pill {{ 'status-shipped' if product.is_active else 'status-cancelled' }}">{{ 'Активний' if product.is_active else 'Прихований' }}</span></td><td><div class="row-actions"><a href="/admin/products/{{ product.id }}/edit">Редагувати</a><form method="post" action="/admin/products/{{ product.id }}/toggle"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="link-button" type="submit">{{ 'Приховати' if product.is_active else 'Активувати' }}</button></form></div></td></tr>{% endfor %}</tbody></table></div></div></section>
+{% macro category_options(items, level=0) -%}
+  {% for category in items %}
+    <option value="{{ category.id }}" {% if admin_params.get('category') == category.id|string %}selected{% endif %}>{{ '— ' * level }}{{ category.name or category.code }}</option>
+    {{ category_options(category_children.get(category.id, []), level + 1) }}
+  {% endfor %}
+{%- endmacro %}
+<section class="container page-shell admin-shell">
+  <div class="page-heading"><div><span class="eyebrow">Адмін-панель</span><h1>Товари</h1><p class="muted">Усього: {{ total }}</p></div><a class="primary-button" href="/admin/products/new">+ Додати товар</a></div>
+  <nav class="admin-nav"><a href="/admin">Огляд</a><a class="active" href="/admin/products">Товари</a><a href="/admin/categories">Категорії</a><a href="/admin/orders">Замовлення</a><a href="/admin/settings">Налаштування</a></nav>
+
+  <details class="panel admin-filter-panel" {% if admin_params.get('q') or admin_params.get('category') or admin_params.get('status') not in [None,'','all'] %}open{% endif %}>
+    <summary><strong>Пошук і сортування</strong><span class="muted">Натисніть, щоб згорнути / розгорнути</span></summary>
+    <form method="get" action="/admin/products" class="admin-product-filters">
+      <label class="admin-search-wide">Пошук<input name="q" value="{{ admin_params.get('q','') }}" placeholder="Назва, SKU, маркування, бренд, країна..."></label>
+      <label>Категорія<select name="category"><option value="">Усі категорії</option>{{ category_options(root_categories) }}</select></label>
+      <label>Стан<select name="status"><option value="all" {% if admin_params.get('status','all') == 'all' %}selected{% endif %}>Усі</option><option value="active" {% if admin_params.get('status') == 'active' %}selected{% endif %}>Активні</option><option value="hidden" {% if admin_params.get('status') == 'hidden' %}selected{% endif %}>Приховані</option></select></label>
+      <label>Сортування<select name="sort">
+        <option value="newest" {% if admin_params.get('sort','newest') == 'newest' %}selected{% endif %}>Останні додані</option>
+        <option value="updated" {% if admin_params.get('sort') == 'updated' %}selected{% endif %}>Останні змінені</option>
+        <option value="name_asc" {% if admin_params.get('sort') == 'name_asc' %}selected{% endif %}>Назва А–Я</option>
+        <option value="name_desc" {% if admin_params.get('sort') == 'name_desc' %}selected{% endif %}>Назва Я–А</option>
+        <option value="price_asc" {% if admin_params.get('sort') == 'price_asc' %}selected{% endif %}>Ціна ↑</option>
+        <option value="price_desc" {% if admin_params.get('sort') == 'price_desc' %}selected{% endif %}>Ціна ↓</option>
+        <option value="stock_asc" {% if admin_params.get('sort') == 'stock_asc' %}selected{% endif %}>Залишок ↑</option>
+        <option value="stock_desc" {% if admin_params.get('sort') == 'stock_desc' %}selected{% endif %}>Залишок ↓</option>
+      </select></label>
+      <label>На сторінці<select name="per_page">{% for value in [25,50,100,200] %}<option value="{{ value }}" {% if per_page == value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+      <div class="admin-filter-actions"><button class="primary-button" type="submit">Застосувати</button><a class="secondary-button" href="/admin/products">Скинути</a></div>
+    </form>
+  </details>
+
+  <div class="panel table-panel"><div class="orders-table-wrap"><table class="data-table product-admin-table">
+    <thead><tr><th>Товар</th><th>Категорія</th><th>Бренд / країна</th><th>Розмір</th><th>Ціна</th><th>Наявність</th><th>Стан</th><th></th></tr></thead>
+    <tbody>
+      {% for product in products %}
+      <tr>
+        <td><div class="admin-product-cell"><img src="{{ product_media_url(product) }}" alt=""><div><strong>{{ product.name }}</strong><small>{{ product.manufacturer_code or 'Без маркування' }}</small><small>SKU: {{ product.sku }}</small></div></div></td>
+        <td>{{ product.category.name or product.category.code }}</td>
+        <td>{% if product_display_brand(product) %}{{ product_display_brand(product) }}{% elif product.manufacturing_country %}{{ product.manufacturing_country }}{% else %}—{% endif %}</td>
+        <td>{{ product_size_label(product) or '—' }}</td>
+        <td>{{ product.price|money }} грн</td>
+        <td>{{ availability_label(product) }}{% if product.stock_is_tracked %}<small class="admin-only-stock"> ({{ product.stock_qty }} шт.)</small>{% endif %}</td>
+        <td><span class="status-pill {{ 'status-shipped' if product.is_active else 'status-cancelled' }}">{{ 'Активний' if product.is_active else 'Прихований' }}</span>{% if product.is_featured %}<small class="featured-admin-label">★ Рекомендований</small>{% endif %}</td>
+        <td><div class="row-actions"><a href="/admin/products/{{ product.id }}/edit">Редагувати</a><form method="post" action="/admin/products/{{ product.id }}/toggle"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="link-button" type="submit">{{ 'Приховати' if product.is_active else 'Активувати' }}</button></form></div></td>
+      </tr>
+      {% else %}<tr><td colspan="8">За цими умовами товарів немає.</td></tr>{% endfor %}
+    </tbody>
+  </table></div></div>
+
+  {% if pages > 1 %}
+  <nav class="pagination admin-pagination" aria-label="Сторінки">
+    {% if page > 1 %}<a href="?{% for k,v in admin_params.items() if k != 'page' %}{{ k }}={{ v|urlencode }}&{% endfor %}page={{ page-1 }}">←</a>{% endif %}
+    {% for p in pagination_items %}{% if p is none %}<span class="pagination-gap">…</span>{% else %}<a class="{% if p == page %}active{% endif %}" href="?{% for k,v in admin_params.items() if k != 'page' %}{{ k }}={{ v|urlencode }}&{% endfor %}page={{ p }}">{{ p }}</a>{% endif %}{% endfor %}
+    {% if page < pages %}<a href="?{% for k,v in admin_params.items() if k != 'page' %}{{ k }}={{ v|urlencode }}&{% endfor %}page={{ page+1 }}">→</a>{% endif %}
+  </nav>
+  {% endif %}
+</section>
 {% endblock %}
